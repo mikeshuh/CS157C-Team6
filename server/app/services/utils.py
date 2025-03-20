@@ -24,6 +24,4 @@ def scrape_summarize(response):
         response = ai_client.summarize_article(content) #jsonify object returned from summarize_article
         summary_data = json.loads(response.data) #converting jsonify object to dict
         article['summarization'] = summary_data['summarization'] #setting a new field for each article
-
-    return data 
-        
+    return data   
