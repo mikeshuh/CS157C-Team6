@@ -8,3 +8,5 @@ flask --debug run
 
 Environment variables:
 MONGO_URI
+NEWS_API_KEY
+GEMINI_API_KEY
