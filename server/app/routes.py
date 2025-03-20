@@ -160,3 +160,41 @@ def generate_articles():
             "success" : False,
             "error": str(e),
         })
+    
+@main.route('/api/get_articles', methods=['GET'])
+def get_articles():
+    title = request.args.get('title')
+    tags = request.args.getlist('tags')  # List of tags for filtering
+    author = request.args.get('author')  # Author filter
+    start_date = request.args.get('start_date')  # Start date filter (e.g. '2025-01-01')
+    end_date = request.args.get('end_date')  # End date filter (e.g. '2025-12-31')
+
+    # Build the filter query
+    query = {}
+
+    if title:
+        query["title"] = {"$regex": title, "$options": "i"} # case-insensitive match
+        
+    # Filter by tags (if provided)
+    if tags:
+        query["summarization.tags"] = {"$in": tags}
+
+    # Filter by author (if provided)
+    if author:
+        query["author"] = author
+
+    # Filter by published date range (if provided)
+    if start_date:
+        query["published_date"] = {"$gte": datetime.strptime(start_date, "%Y-%m-%d")}
+    if end_date:
+        if "published_date" not in query:
+            query["published_date"] = {}
+        query["published_date"]["$lte"] = datetime.strptime(end_date, "%Y-%m-%d")
+
+    # Query the database for articles based on the filter
+    articles = list(mongo.db.articles.find(query))
+
+    return jsonify({
+        "num_found" : len(articles),
+        "articles": article_schema.dump(articles, many=True)
+    })
