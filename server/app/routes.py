@@ -3,6 +3,8 @@ from app.database import mongo
 from app.schemas import article_schema
 from datetime import datetime
 from app.services.news_api import NewsApi
+from app.services.utils import scrape_summarize
+import json
 
 main = Blueprint("main", __name__)
 news_api = NewsApi()
@@ -102,19 +104,29 @@ def delete_all():
 @main.route('/api/generate_articles', methods=['GET', 'POST'])
 def generate_articles():
     try:
-        content_type = request.headers.get('Content-Type')
-        if content_type == 'application/json':
-            data = request.get_json()
-        elif content_type == 'application/x-www-form-urlencoded':
-            data = request.form.to_dict()
+        if request.method == 'POST':
+            content_type = request.headers.get('Content-Type')
+            if content_type == 'application/json':
+                data = request.get_json()
+            elif content_type == 'application/x-www-form-urlencoded':
+                data = request.form.to_dict()
+            else:
+                return jsonify({"error": "Unsupported Content-Type"})
+            if not isinstance(data, dict):
+                return jsonify({"error": "Invalid data"})
         else:
-            return jsonify({"error": "Unsupported Content-Type"})
+            data = {}
         
-        if not isinstance(data, dict):
-            return jsonify({"error": "Invalid data"})
-        
-        result = news_api.get_articles(params=data)
-        return result
+        data["pageSize"] = 5 #setting max articles to get to 10 (for now)
+        data["domains"] = "theverge.com" #only works with theverge.com for now bc of webscraper
+        result = news_api.get_articles(params=data) #result is a jsonify object from get_articles
+        #print("Results from News API: \n", json.loads(result.data))
+
+        summarized_dict = scrape_summarize(result) #dict that includes processed articles + summarizations
+        #print('Dictionary that has summarization: \n', summarized_dict)
+
+        #TO DO: insert this data into db, requires fixing schema, maybe add indexing for title/url 
+        return result 
     except Exception as e:
         return jsonify({
             "success" : False,
