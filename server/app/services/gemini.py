@@ -15,7 +15,9 @@ class AI():
         "Summarize this article into one paragraph and include a key points section with bullet points." +\
         "In the key points section, only include the main points of the article. " +\
         "Return as a JSON object. Here is the JSON schema: " +\
-        "Summary = {{'summary': str, 'key_points' : list[str]}}, " +\
+        "Summary = {{'summary': str, 'key_points' : list[str], 'tags' : list[str]}}, " +\
+        "Tag the articles based on its content. The max amount of tags an article can have is 4. Populate the tags key only using these options: " +\
+        "[World News, Politics, Business, Finance, Health, Science, Entertainment, Sports, Technology, AI, Cybersecurity, Gaming, Travel, Food, Lifestlye]"
         "Here is the article: "
 
     def summarize_article(self, content):
