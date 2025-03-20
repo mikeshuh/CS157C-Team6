@@ -2,8 +2,10 @@ from flask import Blueprint, jsonify, request
 from app.database import mongo
 from app.schemas import article_schema
 from datetime import datetime
+from app.services.news_api import NewsApi
 
 main = Blueprint("main", __name__)
+news_api = NewsApi()
 @main.route('/')
 def home():
     return "Hello, Flask!"
@@ -78,6 +80,8 @@ def insert_article():
     
 @main.route('/api/delete_all_articles', methods=['DELETE'])
 def delete_all():
+
+
     '''
     Delete all articles in the articles collection in briefly.
     '''
@@ -89,6 +93,28 @@ def delete_all():
             "deletedCount" : count,
             "message": "All articles deleted"
         })
+    except Exception as e:
+        return jsonify({
+            "success" : False,
+            "error": str(e)
+        })
+
+@main.route('/api/generate_articles', methods=['GET', 'POST'])
+def generate_articles():
+    try:
+        content_type = request.headers.get('Content-Type')
+        if content_type == 'application/json':
+            data = request.get_json()
+        elif content_type == 'application/x-www-form-urlencoded':
+            data = request.form.to_dict()
+        else:
+            return jsonify({"error": "Unsupported Content-Type"})
+        
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid data"})
+        
+        result = news_api.get_articles(params=data)
+        return result
     except Exception as e:
         return jsonify({
             "success" : False,
