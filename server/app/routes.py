@@ -103,6 +103,15 @@ def delete_all():
 
 @main.route('/api/generate_articles', methods=['GET', 'POST'])
 def generate_articles():
+    '''
+    Generate articles based on the provided keywords.
+    Parameters:
+    q : Keywords or phrases to search for in the article title and body.
+    searchIn : The fields to restrict your q search to. options = (title, description, content)
+    domains : A comma-seperated string of domains (eg bbc.co.uk, techcrunch.com, engadget.com) to restrict the search to.
+    excludeDomains: A comma-seperated string of domains (eg bbc.co.uk, techcrunch.com, engadget.com) to remove from the results.
+    pageSize : The number of results to return per page.
+    '''
     try:
         if request.method == 'POST':
             content_type = request.headers.get('Content-Type')
@@ -117,18 +126,37 @@ def generate_articles():
         else:
             data = {}
         
-        data["pageSize"] = 5 #setting max articles to get to 10 (for now)
+        data["pageSize"] = 5 #setting max articles to get to 5 (for now)
         data["domains"] = "theverge.com" #only works with theverge.com for now bc of webscraper
+
         result = news_api.get_articles(params=data) #result is a jsonify object from get_articles
         #print("Results from News API: \n", json.loads(result.data))
 
         summarized_dict = scrape_summarize(result) #dict that includes processed articles + summarizations
         #print('Dictionary that has summarization: \n', summarized_dict)
 
-        #TO DO: insert this data into db, requires fixing schema, maybe add indexing for title/url 
-        return result 
+        processed_articles = summarized_dict['processed_articles'] #extract processed articles
+        validated_data = article_schema.load(processed_articles, many=True) #schema validation against the processed articles
+
+        #insert all articles into db
+        results = mongo.db.articles.insert_many(validated_data)
+        
+        #inserted_articles is a list of the inserted articles, finds the recently inserted articles using id
+        inserted_articles = list(mongo.db.articles.find({"_id": {"$in" : results.inserted_ids}}))
+        
+        #convert ObjectId to str for dump
+        for article in inserted_articles:
+            article['_id'] = str(article['_id'])
+        
+        created_at = datetime.now().isoformat()
+
+        return jsonify({
+            "success" : True,
+            "created_at" : created_at,
+            "articles_inserted" : article_schema.dump(inserted_articles, many=True)
+        }), 201
     except Exception as e:
         return jsonify({
             "success" : False,
-            "error": str(e)
+            "error": str(e),
         })
