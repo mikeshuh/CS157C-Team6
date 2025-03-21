@@ -4,6 +4,7 @@ from app.schemas import article_schema
 from datetime import datetime
 from app.services.news_api import NewsApi
 from app.services.utils import scrape_summarize
+from app.services.scraper import scrape_tester, domain_rules
 import json
 
 main = Blueprint("main", __name__)
@@ -127,20 +128,21 @@ def generate_articles():
             data = {}
         
         data["pageSize"] = 5 #setting max articles to get to 5 (for now)
-        data["domains"] = "theverge.com" #only works with theverge.com for now bc of webscraper
+        rules_string = ", ".join(domain_rules.keys()) #converting the keys into a comma separated string
+        data["domains"] = rules_string #setting our domains to search in to the domains we have rules for
 
         result = news_api.get_articles(params=data) #result is a jsonify object from get_articles
         #print("Results from News API: \n", json.loads(result.data))
 
         summarized_dict = scrape_summarize(result) #dict that includes processed articles + summarizations
         #print('Dictionary that has summarization: \n', summarized_dict)
-
+        
         processed_articles = summarized_dict['processed_articles'] #extract processed articles
         validated_data = article_schema.load(processed_articles, many=True) #schema validation against the processed articles
 
         #insert all articles into db
         results = mongo.db.articles.insert_many(validated_data)
-        
+
         #inserted_articles is a list of the inserted articles, finds the recently inserted articles using id
         inserted_articles = list(mongo.db.articles.find({"_id": {"$in" : results.inserted_ids}}))
         
@@ -198,3 +200,18 @@ def get_articles():
         "num_found" : len(articles),
         "articles": article_schema.dump(articles, many=True)
     })
+
+@main.route('/api/test_scraper', methods=['POST'])
+def test_scraper():
+    content_type = request.headers.get('Content-Type')
+    if content_type == 'application/json':
+        data = request.get_json()
+    elif content_type == 'application/x-www-form-urlencoded':
+        data = request.form.to_dict()
+    else:
+        return jsonify({"error": "Unsupported Content-Type"})
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid data"})
+    
+    response = scrape_tester(data["url"])
+    return response
