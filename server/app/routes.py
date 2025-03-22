@@ -5,6 +5,7 @@ from datetime import datetime
 from app.services.news_api import NewsApi
 from app.services.utils import scrape_summarize
 from app.services.scraper import scrape_tester, domain_rules
+from pymongo import UpdateOne
 import json
 
 main = Blueprint("main", __name__)
@@ -34,11 +35,8 @@ def test_connection():
 @main.route('/api/insert_articles', methods=['POST'])
 def insert_article():
     '''
-    Insert one or multiple articles into the articles collection in briefly.
-    
-    Required fields:
-    - title (str)
-    - summary (str)
+    Manually insert one or multiple articles into the articles collection in briefly.
+    Must follow schema (see schema.py)
     '''
     try:
         content_type = request.headers.get('Content-Type')
@@ -58,22 +56,37 @@ def insert_article():
         else: 
             return jsonify({"error": "Invalid data"})
         
-        #insert all articles into db
-        results = mongo.db.articles.insert_many(validated_data)
-        
-        #inserted_articles is a list of the inserted articles, finds the recently inserted articles using id
-        inserted_articles = list(mongo.db.articles.find({"_id": {"$in" : results.inserted_ids}}))
-        
-        #convert ObjectId to str for dump
+        bulk_operations = [] #list of operations to perform
+
+        #create an operation to update article for each article
+        for article in validated_data:
+            bulk_operations.append(
+                UpdateOne(
+                    {"url": article["url"]},  # filter criteria
+                    {"$set": article},        # update operation
+                    upsert=True
+                )
+            )
+
+        results = mongo.db.articles.bulk_write(bulk_operations) #perform operations at once
+        article_urls = [article["url"] for article in validated_data] #list of article urls that were inserted
+
+        #inserted_articles is a list of the inserted articles, finds the recently inserted articles using url
+        inserted_articles = list(mongo.db.articles.find({"url": {"$in": article_urls}})) 
+
+        #convert mongodb ObjectId to str for dump
         for article in inserted_articles:
             article['_id'] = str(article['_id'])
-        
+
         created_at = datetime.now().isoformat()
 
         return jsonify({
             "success" : True,
             "created_at" : created_at,
-            "articles" : article_schema.dump(inserted_articles, many=True)
+            "num_inserted" : results.upserted_count,
+            "num_updated" : results.modified_count,
+            "num_processed" : len(bulk_operations),
+            "articles_processed" : article_schema.dump(inserted_articles, many=True)
         }), 201
     except Exception as e:
         return jsonify({
@@ -133,20 +146,31 @@ def generate_articles():
 
         result = news_api.get_articles(params=data) #result is a jsonify object from get_articles
         #print("Results from News API: \n", json.loads(result.data))
-
         summarized_dict = scrape_summarize(result) #dict that includes processed articles + summarizations
         #print('Dictionary that has summarization: \n', summarized_dict)
-        
+
         processed_articles = summarized_dict['processed_articles'] #extract processed articles
         validated_data = article_schema.load(processed_articles, many=True) #schema validation against the processed articles
 
-        #insert all articles into db
-        results = mongo.db.articles.insert_many(validated_data)
+        bulk_operations = [] #list of operations to perform
 
-        #inserted_articles is a list of the inserted articles, finds the recently inserted articles using id
-        inserted_articles = list(mongo.db.articles.find({"_id": {"$in" : results.inserted_ids}}))
+        #create an operation to update article for each article
+        for article in validated_data:
+            bulk_operations.append(
+                UpdateOne(
+                    {"url": article["url"]},  # filter
+                    {"$set": article},        # update
+                    upsert=True #if article doesnt exist, insert
+                )
+            )
         
-        #convert ObjectId to str for dump
+        results = mongo.db.articles.bulk_write(bulk_operations) #perform the operations at once
+        article_urls = [article["url"] for article in validated_data] #list of article urls that were inserted
+
+        #inserted_articles is a list of the inserted articles, finds the recently inserted articles using url
+        inserted_articles = list(mongo.db.articles.find({"url": {"$in": article_urls}}))
+
+        #convert mongodb ObjectId to str for dump
         for article in inserted_articles:
             article['_id'] = str(article['_id'])
         
@@ -155,7 +179,11 @@ def generate_articles():
         return jsonify({
             "success" : True,
             "created_at" : created_at,
-            "articles_inserted" : article_schema.dump(inserted_articles, many=True)
+            "num_inserted" : results.upserted_count,
+            "num_updated" : results.modified_count,
+            "num_processed" : len(bulk_operations),
+            "num_failed" : summarized_dict["num_failed"],
+            "articles_processed" : article_schema.dump(inserted_articles, many=True)
         }), 201
     except Exception as e:
         return jsonify({

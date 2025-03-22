@@ -16,12 +16,21 @@ def scrape_summarize(response):
     '''
     data = json.loads(response.data)
     articles = data['processed_articles']
+    failed = 0
+    URL_to_remove = []
     for article in articles:
         article_url = article['url']
         result = scrape_article(article_url) #returns a jsonify object that contains {"content" : <scraped data>}
+        if type(result) == dict: #if scraping returns a json object that means it failed
+            failed += 1
+            print(article_url, "failed to scrape")
+            URL_to_remove.append(article_url)
+            continue
         result_json = json.loads(result.data) # converting jsonify object to a dict
         content = result_json['content'] #extacting article content
         response = ai_client.summarize_article(content) #jsonify object returned from summarize_article
         summary_data = json.loads(response.data) #converting jsonify object to dict
         article['summarization'] = summary_data['summarization'] #setting a new field for each article
+    data['num_failed'] = failed
+    data['processed_articles'] = [article for article in data['processed_articles'] if article['url'] not in URL_to_remove] #removing articles that failed to scrape from the list of processed articles
     return data   
