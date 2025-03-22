@@ -11,7 +11,7 @@ class ArticleSchema(Schema):
         
     id = fields.Str(dump_only=True, attribute='_id')
     title = fields.Str(required=True)
-    author = fields.Str()
+    author = fields.Str(allow_none=True, missing="No Author")
     published_date = fields.DateTime()
     url = fields.Url(required=True)
     summarization = fields.Nested(SummarizationSchema)
