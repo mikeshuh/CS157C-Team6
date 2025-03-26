@@ -1,0 +1,9 @@
+marshmallow
+Flask
+pymongo
+flask-pymongo
+flask-cors
+python-dotenv
+beautifulsoup4
+requests
+google-genai
