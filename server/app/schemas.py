@@ -1,4 +1,4 @@
-from marshmallow import Schema, fields, INCLUDE
+from marshmallow import Schema, fields, INCLUDE, EXCLUDE
 
 class SummarizationSchema(Schema):
     summary = fields.Str(required=True)
@@ -16,5 +16,13 @@ class ArticleSchema(Schema):
     url = fields.Url(required=True)
     summarization = fields.Nested(SummarizationSchema)
 
+class UserSchema(Schema):
+    class Meta:
+        unknown = EXCLUDE
+    username = fields.Str(required=True)
+    password = fields.Str(required=True)
+    role = fields.Str(missing="user")
+    likes = fields.List(fields.Str, missing=list)
 
 article_schema = ArticleSchema()
+user_schema = UserSchema()
