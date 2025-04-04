@@ -1,6 +1,10 @@
 import json
 from app.services.scraper import scrape_article
 from app.services.gemini import ai_client
+from app.database import mongo
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask import jsonify
+
 def scrape_summarize(response):
     '''
     Function that scrapes article content and summarizes it
@@ -34,3 +38,16 @@ def scrape_summarize(response):
     data['num_failed'] = failed
     data['processed_articles'] = [article for article in data['processed_articles'] if article['url'] not in URL_to_remove] #removing articles that failed to scrape from the list of processed articles
     return data   
+
+def get_user(username):
+    return mongo.db.users.find_one({"username": username})
+
+def admin_required(func):
+    """Decorator to restrict access to admins only"""
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        current_user = get_jwt_identity()
+        if current_user["role"] != "admin":
+            return jsonify({"error": "Admin access required"}), 403
+        return func(*args, **kwargs)
+    return wrapper
