@@ -289,5 +289,5 @@ def login():
         'username': user['username'],
         'role': user['role']
     })
-    
-    return jsonify({'access_token': access_token})
+
+    return jsonify({'access_token': access_token}), 201
