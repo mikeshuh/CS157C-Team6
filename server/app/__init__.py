@@ -3,6 +3,7 @@ from flask_cors import CORS
 from app.database import mongo
 from app.routes import main  #blueprint
 from app.config import Config
+from app.bcrypt import bcrypt, jwt
 
 def create_app():
     app = Flask(__name__)
@@ -10,9 +11,11 @@ def create_app():
     # Load configuration
     app.config.from_object(Config)
     
-    # Initialize database
+    # Initialize
     mongo.init_app(app)
-
+    bcrypt.init_app(app)
+    jwt.init_app(app)
+    
     # Enable CORS
     CORS(app)
 

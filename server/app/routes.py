@@ -1,12 +1,15 @@
 from flask import Blueprint, jsonify, request
 from app.database import mongo
-from app.schemas import article_schema
+from app.schemas import article_schema, user_schema
 from datetime import datetime
 from app.services.news_api import NewsApi
-from app.services.utils import scrape_summarize
+from app.services.utils import *
 from app.services.scraper import scrape_tester, domain_rules
 from pymongo import UpdateOne
+from app.bcrypt import bcrypt, jwt
+from flask_jwt_extended import create_access_token
 import json
+
 
 main = Blueprint("main", __name__)
 news_api = NewsApi()
@@ -96,8 +99,6 @@ def insert_article():
     
 @main.route('/api/delete_all_articles', methods=['DELETE'])
 def delete_all():
-
-
     '''
     Delete all articles in the articles collection in briefly.
     '''
@@ -243,3 +244,50 @@ def test_scraper():
     
     response = scrape_tester(data["url"])
     return response
+
+@main.route('/register', methods=['POST'])
+def register():
+    '''
+    Required header: Content-Type: application/json 
+    '''
+    #get data from payload
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    role = data.get('role', 'user') #default role is user
+
+    #check if username exists
+    if get_user(username):
+        return jsonify({"msg": "User already exists"}), 400
+    
+    #hash password and create user object
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+    user = {
+        "username": username,
+        "password": hashed_password,
+        "role": role  
+    }
+
+    validated_user = user_schema.load(user) #validate user against schema
+    mongo.db.users.insert_one(validated_user) #insert the user
+    return jsonify({"msg": "User registered successfully"}), 201
+
+@main.route('/login', methods=['POST'])
+def login():
+    #get data from payload
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    user = get_user(username)
+
+    #check if user exists or if pw matches
+    if not user or not bcrypt.check_password_hash(user["password"], password):
+        return jsonify({"error": "Invalid email or password"}), 401
+    
+    #create jwt token
+    access_token = create_access_token(identity={
+        'username': user['username'],
+        'role': user['role']
+    })
+
+    return jsonify({'access_token': access_token}), 201
