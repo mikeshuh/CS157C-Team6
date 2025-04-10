@@ -12,7 +12,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      GEMINI_API_KEY: "dummy-key"
+      GEMINI_API_KEY: "test"
+      MONGO_URI: "mongodb://localhost:27017/test"
+      JWT_SECRET_KEY: "test"
+      NEWS_API_KEY: "test"
 
     steps:
       # Step 1: Checkout the repository
