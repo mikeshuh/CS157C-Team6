@@ -11,6 +11,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      GEMINI_API_KEY: "dummy-key"
 
     steps:
       # Step 1: Checkout the repository
