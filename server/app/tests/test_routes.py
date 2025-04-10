@@ -1,9 +1,17 @@
 import uuid
 import pytest
 from server.app import create_app
+import os
 
 @pytest.fixture
 def client():
+    # Set environment variables that your app expects
+
+    os.environ["MONGO_URI"] = "mongodb://localhost:27017/test_database"
+    os.environ["NEWS_API_KEY"] = "test-key"
+    os.environ["GEMINI_API_KEY"] = "test-key"
+    os.environ["JWT_SECRET_KEY"] = "test-key"
+
     # Create app instance with testing settings
     app = create_app()
     app.config["TESTING"] = True
