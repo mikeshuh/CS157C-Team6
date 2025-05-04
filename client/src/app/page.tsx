@@ -59,7 +59,9 @@ export default function Home() {
       try {
         const params = selectedCategory === "All" ? {} : { tags: [selectedCategory] };
         const response = await getArticles(params);
-        setNews(response.articles);
+        // Filter out articles without summarization
+        const validArticles = response.articles.filter(article => article.summarization && article.summarization.summary);
+        setNews(validArticles);
       } catch (err) {
         setError('Failed to fetch articles. Please try again later.');
         console.error('Error fetching articles:', err);
@@ -79,9 +81,15 @@ export default function Home() {
     return article.author.split(' ')[0] + ' News';
   };
 
-  // Get primary category from tags
-  const getPrimaryCategory = (tags: string[]) => {
+  // Get primary category from tags - with defensive check
+  const getPrimaryCategory = (tags: string[] | undefined) => {
+    if (!tags || tags.length === 0) return 'General';
     return tags[0] || 'General';
+  };
+
+  // Get article summary with fallback
+  const getArticleSummary = (article: Article) => {
+    return article.summarization?.summary || 'No summary available';
   };
 
   // Handle generating articles
@@ -118,8 +126,8 @@ export default function Home() {
       </header>
 
       {/* Category Navigation */}
-      <section className="bg-white border-y border-gray-200 py-2 sticky top-16 z-10 mb-6">
-        <div className="container mx-auto px-4">
+      <section className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
+        <div className="container mx-auto px-4 py-2">
           <div className="overflow-x-auto flex gap-2 pb-2">
             {CATEGORIES.map((category) => (
               <button
@@ -137,6 +145,9 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Spacer to account for sticky navigation */}
+      <div className="h-4"></div>
 
       {/* Main Content */}
       <div className="container mx-auto px-4 mb-12">
@@ -173,10 +184,10 @@ export default function Home() {
                   />
                   <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-6">
                     <span className="inline-block bg-blue-600 text-white px-3 py-1 text-sm font-bold mb-2">
-                      {getPrimaryCategory(news[0].summarization.tags)}
+                      {getPrimaryCategory(news[0].summarization?.tags)}
                     </span>
                     <h2 className="text-3xl font-serif font-bold text-white mb-2">{news[0].title}</h2>
-                    <p className="text-white text-opacity-90 mb-2">{news[0].summarization.summary}</p>
+                    <p className="text-white text-opacity-90 mb-2">{getArticleSummary(news[0])}</p>
                     <div className="flex justify-between items-center text-white text-opacity-80 text-sm">
                       <span>{getSourceFromArticle(news[0])}</span>
                       <span>{formatDate(news[0].published_date)}</span>
@@ -198,12 +209,12 @@ export default function Home() {
                       className="object-cover"
                     />
                     <div className="absolute top-0 left-0 bg-gray-900 text-white px-2 py-1 text-xs font-medium">
-                      {getPrimaryCategory(article.summarization.tags)}
+                      {getPrimaryCategory(article.summarization?.tags)}
                     </div>
                   </div>
                   <div className="p-4">
                     <h3 className="font-serif font-bold text-lg mb-2 line-clamp-2">{article.title}</h3>
-                    <p className="text-gray-600 text-sm mb-3 line-clamp-3">{article.summarization.summary}</p>
+                    <p className="text-gray-600 text-sm mb-3 line-clamp-3">{getArticleSummary(article)}</p>
                     <div className="flex justify-between items-center text-xs text-gray-500">
                       <span>{getSourceFromArticle(article)}</span>
                       <Link href={article.url} target="_blank" className="font-medium text-gray-900 hover:underline">Read more</Link>
