@@ -14,6 +14,7 @@ class ArticleSchema(Schema):
     author = fields.Str(allow_none=True, missing="No Author")
     published_date = fields.DateTime()
     url = fields.Url(required=True)
+    img = fields.Url(allow_none=True, missing="None")
     summarization = fields.Nested(SummarizationSchema)
 
 class UserSchema(Schema):
