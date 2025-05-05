@@ -79,3 +79,26 @@ export async function register(user: User): Promise<{ msg: string }> {
 
   return response.json();
 }
+
+// Add a function to check if user is authenticated
+export function isAuthenticated(): boolean {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('token') !== null;
+  }
+  return false;
+}
+
+// Add a function to get the current user's token
+export function getToken(): string | null {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('token');
+  }
+  return null;
+}
+
+// Add a function to logout
+export function logout(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('token');
+  }
+}
