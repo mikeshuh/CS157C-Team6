@@ -1,13 +1,26 @@
-marshmallow
-Flask
-pymongo
-flask-pymongo
-flask-cors
-python-dotenv
-beautifulsoup4
-requests
-google-genai
-flask_jwt_extended
-flask_bcrypt
-pytest
-pytest-flask
+# Core Flask dependencies
+flask==2.3.3
+flask-cors==4.0.0
+flask-pymongo==2.3.0
+flask-bcrypt==1.0.1
+flask-jwt-extended==4.5.3
+
+# Schema validation
+marshmallow==3.20.1
+
+# Environment variables
+python-dotenv==1.0.0
+
+# HTTP requests
+requests==2.31.0
+
+# Web scraping
+beautifulsoup4==4.12.2
+
+# Google services
+google==3.0.0
+google-genai==0.3.0
+
+# Other dependencies
+bcrypt==4.0.1
+pymongo==4.5.0
