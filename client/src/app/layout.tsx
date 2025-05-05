@@ -20,7 +20,7 @@ export default function RootLayout({
       </head>
       <body className="bg-gray-50 min-h-screen flex flex-col">
         {/* Our custom navbar that replaces any default Next.js navbar */}
-        <header className="bg-white border-b border-gray-200 w-full top-0 z-50">
+        <header className="sticky top-0 z-50 bg-white border-b border-gray-200 w-full">
           <div className="container mx-auto px-4">
             <div className="flex items-center justify-between h-16">
               {/* Logo/Brand */}
