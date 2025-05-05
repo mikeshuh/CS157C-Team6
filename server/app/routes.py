@@ -8,6 +8,7 @@ from app.services.scraper import scrape_tester, domain_rules
 from pymongo import UpdateOne
 from app.bcrypt import bcrypt, jwt
 from flask_jwt_extended import create_access_token
+import time
 import json
 
 
@@ -127,6 +128,7 @@ def generate_articles():
     excludeDomains: A comma-seperated string of domains (eg bbc.co.uk, techcrunch.com, engadget.com) to remove from the results.
     pageSize : The number of results to return per page.
     '''
+    start_time = time.time()
     try:
         if request.method == 'POST':
             content_type = request.headers.get('Content-Type')
@@ -177,6 +179,14 @@ def generate_articles():
         
         created_at = datetime.now().isoformat()
 
+        end_time = time.time()
+        execution_time = end_time - start_time
+
+        print("Generate_articles execution report:")
+        print("Articles failed:", summarized_dict["num_failed"])
+        print("Articles inserted:", results.upserted_count)
+        print("Articles updated:", results.modified_count)
+        print(f"Execution time: {execution_time:.4f} seconds")
         return jsonify({
             "success" : True,
             "created_at" : created_at,
@@ -187,6 +197,9 @@ def generate_articles():
             "articles_processed" : article_schema.dump(inserted_articles, many=True)
         }), 201
     except Exception as e:
+        end_time = time.time()
+        execution_time = end_time - start_time  # Capture time even if it fails
+        print("Generate_articles failed after", f"{execution_time:.4f} seconds")
         return jsonify({
             "success" : False,
             "error": str(e),

@@ -27,7 +27,8 @@ class NewsApi:
             result_json = json.loads(response.text) #converts the json string to json
             articles = result_json["articles"] #list of articles from news_api
             processed_data = process_articles(articles)
-
+            print("News Articles Found:", len(processed_data))
+            print(processed_data)
             return jsonify({
                 "success": True,
                 "num_articles" : len(processed_data),
@@ -48,7 +49,8 @@ def process_articles(articles):
             "title": article["title"],
             "author": article["author"],
             "published_date": article["publishedAt"],
-            "url": article["url"]
+            "url": article["url"],
+            "img": article["urlToImage"],
         }
         processed_articles.append(p_article)
     return processed_articles

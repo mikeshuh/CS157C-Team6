@@ -15,10 +15,6 @@ domain_rules = {
         "tag" : "p",
         "class" : "wp-block-paragraph"
     },
-    "bbc.com" : {
-        "tag" : "p",
-        "class" : "sc-eb7bd5f6-0 fezwLZ"
-    },
     "foxnews.com" : {
         "tag" : "p",
         "class" : "article-content",
