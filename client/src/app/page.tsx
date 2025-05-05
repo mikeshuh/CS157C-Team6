@@ -4,54 +4,35 @@
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { getArticles, generateArticles } from '@/lib/api';
+import { Article } from '@/lib/types';
 
-// Mock data for demonstration
-const MOCK_NEWS = [
-  {
-    id: 1,
-    title: "Global Climate Summit Reaches New Agreements",
-    summary: "World leaders have agreed to accelerate emissions reduction targets and increase climate financing for developing nations in a landmark decision.",
-    source: "Climate News",
-    category: "Environment",
-    imageUrl: "/api/placeholder/800/400",
-    publishedAt: "2025-03-28T12:30:00Z",
-    featured: true
-  },
-  {
-    id: 2,
-    title: "Tech Giant Unveils Revolutionary AI Assistant",
-    summary: "The new assistant can generate complex content, answer nuanced questions, and understand context at a level previously unseen in consumer AI products.",
-    source: "Tech Today",
-    category: "Technology",
-    imageUrl: "/api/placeholder/800/400",
-    publishedAt: "2025-03-29T09:15:00Z"
-  },
-  {
-    id: 3,
-    title: "Economic Report Shows Strong Market Resilience",
-    summary: "Despite earlier concerns, markets have demonstrated unexpected strength with employment rates rising and inflation continuing to fall.",
-    source: "Financial Times",
-    category: "Economy",
-    imageUrl: "/api/placeholder/800/400",
-    publishedAt: "2025-03-29T07:45:00Z"
-  },
-  {
-    id: 4,
-    title: "New Medical Breakthrough in Cancer Treatment",
-    summary: "Researchers have developed a promising new immunotherapy approach that has shown remarkable results in early clinical trials.",
-    source: "Health Journal",
-    category: "Health",
-    imageUrl: "/api/placeholder/800/400",
-    publishedAt: "2025-03-28T16:20:00Z"
-  }
+// Update categories to match backend tags
+const CATEGORIES = [
+  "All", 
+  "World News", 
+  "Politics", 
+  "Business", 
+  "Finance", 
+  "Health", 
+  "Science", 
+  "Entertainment", 
+  "Sports", 
+  "Technology", 
+  "AI", 
+  "Cybersecurity", 
+  "Gaming", 
+  "Travel", 
+  "Food", 
+  "Lifestyle"
 ];
-
-const CATEGORIES = ["All", "Technology", "Business", "Health", "Science", "Environment", "Economy"];
 
 export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [news, setNews] = useState(MOCK_NEWS);
-  const [isLoading, setIsLoading] = useState(false);
+  const [news, setNews] = useState<Article[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   const currentDate = new Date().toLocaleDateString('en-US', { 
     weekday: 'long', 
     year: 'numeric', 
@@ -70,25 +51,56 @@ export default function Home() {
     });
   };
 
-  // Filter news by category
+  // Fetch news from API
   useEffect(() => {
-    setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      if (selectedCategory === "All") {
-        setNews(MOCK_NEWS);
-      } else {
-        setNews(MOCK_NEWS.filter(item => item.category === selectedCategory));
+    const fetchNews = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const params = selectedCategory === "All" ? {} : { tags: [selectedCategory] };
+        const response = await getArticles(params);
+        // Filter out articles without summarization
+        const validArticles = response.articles.filter(article => article.summarization && article.summarization.summary);
+        setNews(validArticles);
+      } catch (err) {
+        setError('Failed to fetch articles. Please try again later.');
+        console.error('Error fetching articles:', err);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
-    }, 300);
+    };
+
+    fetchNews();
   }, [selectedCategory]);
 
-  // Get featured article
-  const featuredArticle = MOCK_NEWS.find(article => article.featured);
-  
-  // Get regular articles
-  const regularArticles = MOCK_NEWS.filter(article => !article.featured);
+  // Get source from author field (simulating)
+  const getSourceFromArticle = (article: Article) => {
+    if (!article.author || article.author === "No Author") {
+      return "Briefly News";
+    }
+    return article.author.split(' ')[0] + ' News';
+  };
+
+  // Get primary category from tags - with defensive check
+  const getPrimaryCategory = (tags: string[] | undefined) => {
+    if (!tags || tags.length === 0) return 'General';
+    return tags[0] || 'General';
+  };
+
+  // Get article summary with fallback
+  const getArticleSummary = (article: Article) => {
+    return article.summarization?.summary || 'No summary available';
+  };
+
+  // Handle generating articles
+  const handleGenerateArticles = async () => {
+    try {
+      await generateArticles({ q: 'latest news' });
+      window.location.reload();
+    } catch (err) {
+      console.error('Error generating articles:', err);
+    }
+  };
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -114,8 +126,8 @@ export default function Home() {
       </header>
 
       {/* Category Navigation */}
-      <section className="bg-white border-y border-gray-200 py-2 sticky top-16 z-10 mb-6">
-        <div className="container mx-auto px-4">
+      <section className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
+        <div className="container mx-auto px-4 py-2">
           <div className="overflow-x-auto flex gap-2 pb-2">
             {CATEGORIES.map((category) => (
               <button
@@ -134,33 +146,51 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Spacer to account for sticky navigation */}
+      <div className="h-4"></div>
+
       {/* Main Content */}
       <div className="container mx-auto px-4 mb-12">
         {isLoading ? (
           <div className="flex justify-center py-12">
             <div className="animate-spin h-8 w-8 border-4 border-gray-900 rounded-full border-t-transparent"></div>
           </div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <div className="text-red-500 mb-4">{error}</div>
+            <button 
+              onClick={() => window.location.reload()}
+              className="bg-gray-900 text-white px-4 py-2 rounded font-serif hover:bg-gray-800 transition"
+            >
+              Try Again
+            </button>
+          </div>
+        ) : news.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-600 mb-4">No articles found for this category.</p>
+            <p className="text-sm text-gray-500">Try selecting a different category or check back later.</p>
+          </div>
         ) : (
           <>
-            {/* Featured Article */}
-            {featuredArticle && (
+            {/* Featured Article - using first article */}
+            {news[0] && (
               <div className="mb-8 border-b border-gray-200 pb-8">
                 <div className="relative h-80 mb-4">
                   <Image 
-                    src={featuredArticle.imageUrl} 
-                    alt={featuredArticle.title}
+                    src={news[0].img || "/api/placeholder/800/400"} // Use article image with fallback
+                    alt={news[0].title}
                     fill
                     className="object-cover"
                   />
                   <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-6">
                     <span className="inline-block bg-blue-600 text-white px-3 py-1 text-sm font-bold mb-2">
-                      {featuredArticle.category}
+                      {getPrimaryCategory(news[0].summarization?.tags)}
                     </span>
-                    <h2 className="text-3xl font-serif font-bold text-white mb-2">{featuredArticle.title}</h2>
-                    <p className="text-white text-opacity-90 mb-2">{featuredArticle.summary}</p>
+                    <h2 className="text-3xl font-serif font-bold text-white mb-2">{news[0].title}</h2>
+                    <p className="text-white text-opacity-90 mb-2">{getArticleSummary(news[0])}</p>
                     <div className="flex justify-between items-center text-white text-opacity-80 text-sm">
-                      <span>{featuredArticle.source}</span>
-                      <span>{formatDate(featuredArticle.publishedAt)}</span>
+                      <span>{getSourceFromArticle(news[0])}</span>
+                      <span>{formatDate(news[0].published_date)}</span>
                     </div>
                   </div>
                 </div>
@@ -169,25 +199,25 @@ export default function Home() {
 
             {/* News Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {regularArticles.map((article) => (
+              {news.slice(1).map((article) => (
                 <div key={article.id} className="bg-white border border-gray-200 hover:shadow-md transition">
                   <div className="relative h-48">
                     <Image 
-                      src={article.imageUrl} 
+                      src={article.img || "/api/placeholder/800/400"}
                       alt={article.title}
                       fill
                       className="object-cover"
                     />
                     <div className="absolute top-0 left-0 bg-gray-900 text-white px-2 py-1 text-xs font-medium">
-                      {article.category}
+                      {getPrimaryCategory(article.summarization?.tags)}
                     </div>
                   </div>
                   <div className="p-4">
                     <h3 className="font-serif font-bold text-lg mb-2 line-clamp-2">{article.title}</h3>
-                    <p className="text-gray-600 text-sm mb-3 line-clamp-3">{article.summary}</p>
+                    <p className="text-gray-600 text-sm mb-3 line-clamp-3">{getArticleSummary(article)}</p>
                     <div className="flex justify-between items-center text-xs text-gray-500">
-                      <span>{article.source}</span>
-                      <Link href={`/`} className="font-medium text-gray-900 hover:underline">Read more</Link>
+                      <span>{getSourceFromArticle(article)}</span>
+                      <Link href={article.url} target="_blank" className="font-medium text-gray-900 hover:underline">Read more</Link>
                     </div>
                   </div>
                 </div>
@@ -196,6 +226,18 @@ export default function Home() {
           </>
         )}
       </div>
+
+      {/* Generate Articles Button - for development/testing */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="fixed bottom-4 right-4">
+          <button 
+            onClick={handleGenerateArticles}
+            className="bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg font-serif hover:bg-blue-700 transition"
+          >
+            Generate Articles
+          </button>
+        </div>
+      )}
 
       {/* Simple Call to Action */}
       <section className="py-8 bg-gray-100 border-t border-gray-200">
