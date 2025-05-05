@@ -1,7 +1,7 @@
 // lib/api.ts
 import { ArticleResponse, GenerateArticlesResponse, LoginResponse, User } from './types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 export async function getArticles(params: {
   title?: string;

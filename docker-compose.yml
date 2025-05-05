@@ -1,0 +1,24 @@
+services:
+  backend:
+    build:
+      context: ./server
+    ports:
+      - "5001:5001"
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=development
+    command: flask run --host=0.0.0.0 --port=5001
+    container_name: briefly-backend-container
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./client
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5001
+    depends_on:
+      - backend
+    container_name: briefly-frontend-container
+    restart: unless-stopped

@@ -177,7 +177,7 @@ export default function Home() {
               <div className="mb-8 border-b border-gray-200 pb-8">
                 <div className="relative h-80 mb-4">
                   <Image 
-                    src="/api/placeholder/800/400"
+                    src={news[0].img || "/api/placeholder/800/400"} // Use article image with fallback
                     alt={news[0].title}
                     fill
                     className="object-cover"
@@ -203,7 +203,7 @@ export default function Home() {
                 <div key={article.id} className="bg-white border border-gray-200 hover:shadow-md transition">
                   <div className="relative h-48">
                     <Image 
-                      src="/api/placeholder/800/400"
+                      src={article.img || "/api/placeholder/800/400"}
                       alt={article.title}
                       fill
                       className="object-cover"

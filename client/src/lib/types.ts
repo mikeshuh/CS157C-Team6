@@ -11,6 +11,7 @@ export interface Summarization {
     author: string;
     published_date: string;
     url: string;
+    img: string;
     summarization: Summarization;
   }
   
