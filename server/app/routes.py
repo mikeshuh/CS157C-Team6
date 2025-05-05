@@ -9,6 +9,7 @@ from pymongo import UpdateOne
 from app.bcrypt import bcrypt, jwt
 from flask_jwt_extended import create_access_token
 import time
+from bson import ObjectId
 import json
 
 
@@ -304,3 +305,49 @@ def login():
     })
 
     return jsonify({'access_token': access_token}), 201
+
+@main.route('/api/like_article', methods=['POST'])
+def like_article():
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        article_id = data.get('article_id')
+
+        if not user_id or not article_id:
+            return jsonify({"success": False, "error": "Missing user_id or article_id"}), 400
+        
+        try:
+            user_obj_id = ObjectId(user_id)
+            article_obj_id = ObjectId(article_id)
+        except Exception:
+            return jsonify({"success": False, "error": "Invalid user_id or article_id format"}), 400
+        
+        #tries adding article to user likes array
+        user_update_result = mongo.db.users.update_one(
+            {"_id": user_obj_id},
+            {"$addToSet": {"likes": str(article_obj_id)}}
+        )
+
+        #checks if there was an article added
+        if (user_update_result.modified_count != 0):
+            print('Added article_id', article_obj_id, 'to user', user_obj_id, 'likes')
+        #if article not added, then it already exists in likes array, then remove it
+        else:
+            user_update_result = mongo.db.users.update_one(
+            {"_id": user_obj_id},
+            {"$pull": {"likes": str(article_obj_id)}})
+            print('Removed article_id', article_obj_id, 'from user', user_obj_id, 'likes')
+
+        return jsonify({
+            "success": True,
+            "user_modified_count": user_update_result.modified_count,
+        }), 200
+    
+    except Exception as e:
+        print("Like article failed:", str(e))
+        return jsonify({
+            "success": False,
+            "error": str(e),
+        }), 500
+    
+
