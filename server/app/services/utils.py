@@ -1,4 +1,5 @@
 import json
+import re
 from app.services.scraper import scrape_article
 from app.services.gemini import ai_client
 from app.database import mongo
@@ -42,6 +43,9 @@ def scrape_summarize(response):
 def get_user(username):
     return mongo.db.users.find_one({"username": username})
 
+def get_user_by_email(email):
+    return mongo.db.users.find_one({"email": email})
+
 def admin_required(func):
     """Decorator to restrict access to admins only"""
     @jwt_required()
@@ -51,3 +55,50 @@ def admin_required(func):
             return jsonify({"error": "Admin access required"}), 403
         return func(*args, **kwargs)
     return wrapper
+
+def validate_password(password):
+    """
+    Validates a password to ensure it meets security requirements:
+    - At least 8 characters long
+    - Contains at least one uppercase letter
+    - Contains at least one lowercase letter
+    - Contains at least one number
+    - Contains at least one special character
+    
+    Returns: bool - True if password meets requirements, False otherwise
+    """
+    # Check if password is at least 8 characters long
+    if len(password) < 8:
+        return False
+    
+    # Check if password contains at least one uppercase letter
+    if not re.search(r'[A-Z]', password):
+        return False
+    
+    # Check if password contains at least one lowercase letter
+    if not re.search(r'[a-z]', password):
+        return False
+    
+    # Check if password contains at least one number
+    if not re.search(r'\d', password):
+        return False
+    
+    # Check if password contains at least one special character
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        return False
+    
+    return True
+
+def sanitize_input(input_string):
+    """
+    Sanitizes input to prevent XSS attacks:
+    - Removes HTML tags
+    - Trims whitespace
+    
+    Returns: str - Sanitized input string
+    """
+    # Remove HTML tags
+    sanitized = re.sub(r'<[^>]*>', '', input_string)
+    # Trim whitespace
+    sanitized = sanitized.strip()
+    return sanitized

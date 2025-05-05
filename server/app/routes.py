@@ -262,49 +262,94 @@ def test_scraper():
 @main.route('/register', methods=['POST'])
 def register():
     '''
-    Required header: Content-Type: application/json 
+    Register a new user
+    Required header: Content-Type: application/json
+    Required fields: username, email, password
     '''
     #get data from payload
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
+    email = data.get('email')
     role = data.get('role', 'user') #default role is user
 
-    #check if username exists
+    # Check if required fields are provided
+    if not username or not password or not email:
+        return jsonify({"msg": "Username, email, and password are required"}), 400
+    
+    # Check if username exists
     if get_user(username):
         return jsonify({"msg": "User already exists"}), 400
     
-    #hash password and create user object
+    # Check if email exists
+    if mongo.db.users.find_one({"email": email}):
+        return jsonify({"msg": "Email already in use"}), 400
+    
+    # Validate password strength
+    if not validate_password(password):
+        return jsonify({"msg": "Password must be at least 8 characters long and include uppercase, lowercase, number, and special character"}), 400
+    
+    # Hash password and create user object
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
     user = {
         "username": username,
+        "email": email,
         "password": hashed_password,
         "role": role  
     }
 
-    validated_user = user_schema.load(user) #validate user against schema
-    mongo.db.users.insert_one(validated_user) #insert the user
-    return jsonify({"msg": "User registered successfully"}), 201
+    try:
+        validated_user = user_schema.load(user) # Validate user against schema
+        mongo.db.users.insert_one(validated_user) # Insert the user
+        return jsonify({"msg": "User registered successfully"}), 201
+    except ValidationError as err:
+        return jsonify({"msg": "Validation error", "errors": err.messages}), 400
+    except Exception as e:
+        return jsonify({"msg": "Registration failed", "error": str(e)}), 500
 
 @main.route('/login', methods=['POST'])
 def login():
-    #get data from payload
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    user = get_user(username)
-
-    #check if user exists or if pw matches
-    if not user or not bcrypt.check_password_hash(user["password"], password):
-        return jsonify({"error": "Invalid email or password"}), 401
+    '''
+    Authenticate a user and return a JWT token
+    Required header: Content-Type: application/json
+    Required fields: username, password
+    '''
+    try:
+        # Get data from payload
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not username or not password:
+            return jsonify({"error": "Username and password are required"}), 400
+        
+        # Sanitize inputs
+        username = sanitize_input(username)
+        
+        # Get user from database
+        user = get_user(username)
+        
+        # Check if user exists or if password matches
+        if not user or not bcrypt.check_password_hash(user["password"], password):
+            return jsonify({"error": "Invalid username or password"}), 401
+        
+        # Create JWT token with user identity and additional claims
+        user_claims = {
+            'username': user['username'],
+            'role': user.get('role', 'user')
+        }
+        
+        # Add email to claims if it exists
+        if 'email' in user:
+            user_claims['email'] = user['email']
+        
+        access_token = create_access_token(identity=user_claims)
+        
+        return jsonify({'access_token': access_token}), 200
     
-    #create jwt token
-    access_token = create_access_token(identity={
-        'username': user['username'],
-        'role': user['role']
-    })
-
-    return jsonify({'access_token': access_token}), 201
+    except Exception as e:
+        print(f"Login error: {str(e)}")
+        return jsonify({"error": "An error occurred during login. Please try again."}), 500
 
 @main.route('/api/like_article', methods=['POST'])
 def like_article():
