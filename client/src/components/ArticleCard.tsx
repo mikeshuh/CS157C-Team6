@@ -41,22 +41,28 @@ export default function ArticleCard({ article, featured = false }: ArticleCardPr
 
   if (featured) {
     return (
-      <div className="mb-8 border-b border-gray-200 pb-8">
+      // Use flex-col to ensure content flows downward
+      <div className="article-featured mb-8 border-b border-gray-200 pb-8 flex flex-col">
         <Link href={`/article/${article.id}`}>
-          <div className="relative h-80 mb-4 cursor-pointer hover:opacity-95 transition">
-            <Image 
-              src={article.img || "/api/placeholder/800/400"}
-              alt={article.title}
-              fill
-              className="object-cover"
-            />
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-6">
-              <span className="inline-block bg-blue-600 text-white px-3 py-1 text-sm font-bold mb-2">
+          <div className="article-container overflow-hidden">
+            {/* Technology tag positioned absolutely on top of the image */}
+            <div className="absolute top-0 left-0 z-10">
+              <div className="bg-blue-600 text-white px-3 py-1 text-sm font-bold">
                 {getPrimaryCategory(article.summarization?.tags)}
-              </span>
-              <h2 className="text-3xl font-serif font-bold text-white mb-2">{article.title}</h2>
-              <p className="text-white text-opacity-90 mb-2">{getArticleSummary(article)}</p>
-              <div className="flex justify-between items-center text-white text-opacity-80 text-sm">
+              </div>
+            </div>
+            
+            <div className="article-title-container pt-10 md:pt-14 bg-gray-700 text-white px-4 md:px-6 py-4 md:py-5">
+              <h2 className="text-2xl md:text-3xl font-serif font-bold text-white">{article.title}</h2>
+            </div>
+            
+            {/* Article content with dark background */}
+            <div className="article-content bg-gray-800 text-white p-4 md:p-6">
+              <p className="text-white text-opacity-90 mb-4 text-sm md:text-base">
+                {getArticleSummary(article)}
+              </p>
+              
+              <div className="flex justify-between items-center text-white text-opacity-80 text-xs md:text-sm">
                 <span>{getSourceFromArticle(article)}</span>
                 <span>{formatDate(article.published_date)}</span>
               </div>
