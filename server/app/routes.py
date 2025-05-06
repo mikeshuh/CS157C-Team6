@@ -1,10 +1,11 @@
 from flask import Blueprint, jsonify, request
+from marshmallow import ValidationError
 from app.database import mongo
 from app.schemas import article_schema, user_schema
 from datetime import datetime
 from app.services.news_api import NewsApi
 from app.services.utils import *
-from app.services.scraper import scrape_tester, domain_rules
+from app.services.scraper import scrape_article
 from pymongo import UpdateOne
 from app.bcrypt import bcrypt, jwt
 from flask_jwt_extended import create_access_token
@@ -116,94 +117,6 @@ def delete_all():
         return jsonify({
             "success" : False,
             "error": str(e)
-        })
-
-@main.route('/api/generate_articles', methods=['GET', 'POST'])
-def generate_articles():
-    '''
-    Generate articles based on the provided keywords.
-    Parameters:
-    q : Keywords or phrases to search for in the article title and body.
-    searchIn : The fields to restrict your q search to. options = (title, description, content)
-    domains : A comma-seperated string of domains (eg bbc.co.uk, techcrunch.com, engadget.com) to restrict the search to.
-    excludeDomains: A comma-seperated string of domains (eg bbc.co.uk, techcrunch.com, engadget.com) to remove from the results.
-    pageSize : The number of results to return per page.
-    '''
-    start_time = time.time()
-    try:
-        if request.method == 'POST':
-            content_type = request.headers.get('Content-Type')
-            if content_type == 'application/json':
-                data = request.get_json()
-            elif content_type == 'application/x-www-form-urlencoded':
-                data = request.form.to_dict()
-            else:
-                return jsonify({"error": "Unsupported Content-Type"})
-            if not isinstance(data, dict):
-                return jsonify({"error": "Invalid data"})
-        else:
-            data = {}
-        
-        data["pageSize"] = 5 #setting max articles to get to 5 (for now)
-        rules_string = ", ".join(domain_rules.keys()) #converting the keys into a comma separated string
-        data["domains"] = rules_string #setting our domains to search in to the domains we have rules for
-
-        result = news_api.get_articles(params=data) #result is a jsonify object from get_articles
-        #print("Results from News API: \n", json.loads(result.data))
-        summarized_dict = scrape_summarize(result) #dict that includes processed articles + summarizations
-        #print('Dictionary that has summarization: \n', summarized_dict)
-
-        processed_articles = summarized_dict['processed_articles'] #extract processed articles
-        validated_data = article_schema.load(processed_articles, many=True) #schema validation against the processed articles
-
-        bulk_operations = [] #list of operations to perform
-
-        #create an operation to update article for each article
-        for article in validated_data:
-            bulk_operations.append(
-                UpdateOne(
-                    {"url": article["url"]},  # filter
-                    {"$set": article},        # update
-                    upsert=True #if article doesnt exist, insert
-                )
-            )
-        
-        results = mongo.db.articles.bulk_write(bulk_operations) #perform the operations at once
-        article_urls = [article["url"] for article in validated_data] #list of article urls that were inserted
-
-        #inserted_articles is a list of the inserted articles, finds the recently inserted articles using url
-        inserted_articles = list(mongo.db.articles.find({"url": {"$in": article_urls}}))
-
-        #convert mongodb ObjectId to str for dump
-        for article in inserted_articles:
-            article['_id'] = str(article['_id'])
-        
-        created_at = datetime.now().isoformat()
-
-        end_time = time.time()
-        execution_time = end_time - start_time
-
-        print("Generate_articles execution report:")
-        print("Articles failed:", summarized_dict["num_failed"])
-        print("Articles inserted:", results.upserted_count)
-        print("Articles updated:", results.modified_count)
-        print(f"Execution time: {execution_time:.4f} seconds")
-        return jsonify({
-            "success" : True,
-            "created_at" : created_at,
-            "num_inserted" : results.upserted_count,
-            "num_updated" : results.modified_count,
-            "num_processed" : len(bulk_operations),
-            "num_failed" : summarized_dict["num_failed"],
-            "articles_processed" : article_schema.dump(inserted_articles, many=True)
-        }), 201
-    except Exception as e:
-        end_time = time.time()
-        execution_time = end_time - start_time  # Capture time even if it fails
-        print("Generate_articles failed after", f"{execution_time:.4f} seconds")
-        return jsonify({
-            "success" : False,
-            "error": str(e),
         })
     
 @main.route('/api/get_articles', methods=['GET'])
@@ -395,4 +308,101 @@ def like_article():
             "error": str(e),
         }), 500
     
+@main.route('/api/test_scraper_v2', methods=['POST'])
+def scrape_article_test():
+    data = request.get_json()
+    url = data.get('url')
+    result = scrape_article(url)
+    result_json = json.loads(result.data)
+    print(result_json)
+    return jsonify({
+        'success' : True
+    })
 
+@main.route('/api/generate_articles', methods=['GET', 'POST'])
+def generate_articles():
+    '''
+    Generate articles based on the provided keywords.
+    Parameters:
+    q : Keywords or phrases to search for in the article title and body.
+    searchIn : The fields to restrict your q search to. options = (title, description, content)
+    domains : A comma-seperated string of domains (eg bbc.co.uk, techcrunch.com, engadget.com) to restrict the search to.
+    excludeDomains: A comma-seperated string of domains (eg bbc.co.uk, techcrunch.com, engadget.com) to remove from the results.
+    pageSize : The number of results to return per page.
+    '''
+    start_time = time.time()
+    try:
+        if request.method == 'POST':
+            content_type = request.headers.get('Content-Type')
+            if content_type == 'application/json':
+                data = request.get_json()
+            elif content_type == 'application/x-www-form-urlencoded':
+                data = request.form.to_dict()
+            else:
+                return jsonify({"error": "Unsupported Content-Type"})
+            if not isinstance(data, dict):
+                return jsonify({"error": "Invalid data"})
+        else:
+            data = {}
+        
+        data["pageSize"] = 5 #setting max articles to get to 5 (for now)
+        data['sortBy'] = 'relevancy'
+        print('Parameters for article query from NewsAPI:', data)
+        result = news_api.get_articles(params=data) #result is a jsonify object from get_articles
+        #print("Results from News API: \n", json.loads(result.data))
+
+        summarized_dict = scrape_summarize(result) #dict that includes processed articles + summarizations
+        #print('Dictionary that has summarization: \n', summarized_dict)
+
+        processed_articles = summarized_dict['processed_articles'] #extract processed articles
+        validated_data = article_schema.load(processed_articles, many=True) #schema validation against the processed articles
+
+        bulk_operations = [] #list of operations to perform
+        
+        #create an operation to update article for each article
+        for article in validated_data:
+            bulk_operations.append(
+                UpdateOne(
+                    {"url": article["url"]},  # filter
+                    {"$set": article},        # update
+                    upsert=True #if article doesnt exist, insert
+                )
+            )
+        
+        results = mongo.db.articles.bulk_write(bulk_operations) #perform the operations at once
+        article_urls = [article["url"] for article in validated_data] #list of article urls that were inserted
+
+        #inserted_articles is a list of the inserted articles, finds the recently inserted articles using url
+        inserted_articles = list(mongo.db.articles.find({"url": {"$in": article_urls}}))
+
+        #convert mongodb ObjectId to str for dump
+        for article in inserted_articles:
+            article['_id'] = str(article['_id'])
+        
+        created_at = datetime.now().isoformat()
+        
+        end_time = time.time()
+        execution_time = end_time - start_time
+
+        print("Generate_articles execution report:")
+        print("Articles failed:", summarized_dict["num_failed"])
+        print("Articles inserted:", results.upserted_count)
+        print("Articles updated:", results.modified_count)
+        print(f"Execution time: {execution_time:.4f} seconds")
+        return jsonify({
+            "success" : True,
+            "created_at" : created_at,
+            "num_inserted" : results.upserted_count,
+            "num_updated" : results.modified_count,
+            "num_processed" : len(bulk_operations),
+            "num_failed" : summarized_dict["num_failed"],
+            "articles_processed" : article_schema.dump(inserted_articles, many=True)
+        }), 201
+    except Exception as e:
+        end_time = time.time()
+        execution_time = end_time - start_time  # Capture time even if it fails
+        print("Generate_articles failed after", f"{execution_time:.4f} seconds")
+        return jsonify({
+            "success" : False,
+            "error": str(e),
+        })
