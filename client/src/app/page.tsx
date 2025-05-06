@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { getArticles, generateArticles } from '@/lib/api';
 import { Article } from '@/lib/types';
 import ArticleCard from '@/components/ArticleCard';
+import Image from 'next/image';
 
 // Update categories to match backend tags
 const CATEGORIES = [
@@ -106,8 +107,53 @@ function HomeContent() {
     }
   };
 
+  // Format featured article data
+  const formatFeaturedArticle = (article: Article) => {
+    if (!article) return null;
+    
+    // Get primary category from tags
+    const getPrimaryCategory = () => {
+      if (!article.summarization?.tags || article.summarization.tags.length === 0) 
+        return 'General';
+      return article.summarization.tags[0] || 'General';
+    };
+    
+    // Format date
+    const formatDate = () => {
+      const date = new Date(article.published_date);
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    };
+    
+    // Get author/source
+    const getSource = () => {
+      if (!article.author || article.author === "No Author") {
+        return "Briefly News";
+      }
+      return article.author;
+    };
+    
+    return {
+      id: article.id,
+      title: article.title,
+      summary: article.summarization?.summary || 'No summary available',
+      category: getPrimaryCategory(),
+      date: formatDate(),
+      source: getSource(),
+      url: article.url,
+      img: article.img
+    };
+  };
+
   return (
     <main className="min-h-screen bg-gray-50">
+      {/* Add a spacer at the top to ensure content starts below fixed navbar */}
+      <div className="h-4"></div>
+      
       {/* Newspaper Masthead */}
       <div className="bg-white border-b border-gray-200">
         <div className="container mx-auto px-4 py-3">
@@ -119,7 +165,7 @@ function HomeContent() {
       </div>
 
       {/* Newspaper Title Section */}
-      <header className="bg-white border-b border-gray-800 py-6 mb-6">
+      <header className="bg-white border-b border-gray-800 py-6">
         <div className="container mx-auto px-4 text-center">
           <h1 className="text-6xl font-serif font-black tracking-tight">BRIEFLY</h1>
           <div className="flex justify-center mt-2">
@@ -130,7 +176,7 @@ function HomeContent() {
       </header>
 
       {/* Category Navigation */}
-      <section className="sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
+      <section className="sticky top-16 z-40 bg-white border-b border-gray-200 shadow-sm">
         <div className="container mx-auto px-4 py-2">
           <div className="overflow-x-auto flex gap-2 pb-2">
             {CATEGORIES.map((category) => (
@@ -150,11 +196,8 @@ function HomeContent() {
         </div>
       </section>
 
-      {/* Spacer to account for sticky navigation */}
-      <div className="h-4"></div>
-
       {/* Main Content */}
-      <div className="container mx-auto px-4 mb-12">
+      <div className="container mx-auto px-4 mb-12 mt-6">
         {isLoading ? (
           <div className="flex justify-center py-12">
             <div className="animate-spin h-8 w-8 border-4 border-gray-900 rounded-full border-t-transparent"></div>
@@ -191,8 +234,56 @@ function HomeContent() {
               </div>
             )}
 
-            {/* Featured Article - using first article */}
-            {news[0] && <ArticleCard article={news[0]} featured={true} />}
+            {/* Featured Article - With Image */}
+            {news[0] && (
+              <div className="mb-8 border-b border-gray-200 pb-8">
+                <div className="featured-article relative rounded overflow-hidden">
+                  {/* Category Tag */}
+                  <div className="absolute top-0 left-0 z-10">
+                    <div className="bg-blue-600 text-white px-3 py-1 text-sm font-bold">
+                      {formatFeaturedArticle(news[0])?.category}
+                    </div>
+                  </div>
+                  
+                  {/* Image Container with Fixed Height */}
+                  <div className="relative w-full h-96">
+                    <Image 
+                      src={news[0].img || "/api/placeholder/800/400"}
+                      alt={news[0].title}
+                      fill
+                      className="object-cover"
+                    />
+                    
+                    {/* Dark Overlay Gradient for Text Readability */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent opacity-90"></div>
+                    
+                    {/* Text Container - Positioned at Bottom */}
+                    <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 text-white z-10">
+                      <h2 className="text-2xl md:text-3xl font-serif font-bold mb-3">
+                        {formatFeaturedArticle(news[0])?.title}
+                      </h2>
+                      
+                      <p className="text-white text-opacity-90 mb-4 text-sm md:text-base">
+                        {formatFeaturedArticle(news[0])?.summary}
+                      </p>
+                      
+                      <div className="flex justify-between items-center text-white text-opacity-80 text-xs md:text-sm">
+                        <span>{formatFeaturedArticle(news[0])?.source}</span>
+                        <span>{formatFeaturedArticle(news[0])?.date}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Read Full Article Button */}
+                  <a 
+                    href={`/article/${news[0].id}`}
+                    className="mt-4 block bg-gray-900 text-white px-4 py-2 text-center hover:bg-gray-800 transition"
+                  >
+                    Read Article
+                  </a>
+                </div>
+              </div>
+            )}
 
             {/* News Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

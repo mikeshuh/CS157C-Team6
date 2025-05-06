@@ -1,4 +1,3 @@
-// app/layout.tsx
 import type { Metadata } from 'next';
 import './globals.css';
 import NavBar from '@/components/NavBar';
@@ -16,10 +15,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-gray-50 min-h-screen flex flex-col">
-        {/* The NavBar is now a separate client component */}
+        {/* The NavBar is now a fixed component at the top */}
         <NavBar />
         
-        <div className="flex-grow flex flex-col">
+        {/* Add padding-top to create space for the fixed navbar */}
+        <div className="flex-grow flex flex-col pt-16">
           {children}
         </div>
       </body>
