@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { getArticles, likeArticle, getUserId, isAuthenticated } from '@/lib/api';
+import { getArticles, likeArticle, getUserId, isAuthenticated, getUserLikes } from '@/lib/api';
 import { Article } from '@/lib/types';
 
 export default function ArticlePage() {
@@ -42,16 +42,32 @@ export default function ArticlePage() {
     };
 
     fetchArticle();
-    
+  }, [id]);
+
+  useEffect(() => {
     // Check if user is authenticated
-    setUserAuthenticated(isAuthenticated());
+    const authenticated = isAuthenticated();
+    setUserAuthenticated(authenticated);
     
     // Check if article is in user's likes
     const checkIfLiked = async () => {
       if (typeof window !== 'undefined') {
-        // In a real implementation, you would have an API to get user's likes
-        // For now, we'll use localStorage to maintain liked state
-        const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+        // First check localStorage (faster)
+        const cachedLikes = localStorage.getItem('likedArticles');
+        let likedArticles: string[] = cachedLikes ? JSON.parse(cachedLikes) : [];
+        
+        // If user is authenticated, fetch fresh likes from server
+        const userId = getUserId();
+        if (authenticated && userId) {
+          try {
+            // Fetch up-to-date likes from the server
+            likedArticles = await getUserLikes(userId);
+          } catch (error) {
+            console.error('Error fetching likes:', error);
+            // Continue with cached likes if server fetch fails
+          }
+        }
+        
         setIsLiked(likedArticles.includes(id));
       }
     };

@@ -348,12 +348,39 @@ def login():
         # Return the user's MongoDB ID along with the token
         return jsonify({
             'access_token': access_token,
-            'user_id': str(user['_id'])
+            'user_id': str(user['_id']),
+            'likes': user.get('likes', [])
         }), 200
     
     except Exception as e:
         print(f"Login error: {str(e)}")
         return jsonify({"error": "An error occurred during login. Please try again."}), 500
+
+@main.route('/api/user/likes/<user_id>', methods=['GET'])
+def get_user_likes(user_id):
+    try:
+        # Convert string ID to ObjectId
+        try:
+            user_obj_id = ObjectId(user_id)
+        except Exception:
+            return jsonify({"success": False, "error": "Invalid user_id format"}), 400
+            
+        # Find the user
+        user = mongo.db.users.find_one({"_id": user_obj_id})
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 404
+            
+        # Return the user's likes
+        return jsonify({
+            "success": True,
+            "likes": user.get('likes', [])
+        }), 200
+    except Exception as e:
+        print(f"Error getting user likes: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+        }), 500
 
 @main.route('/api/like_article', methods=['POST'])
 def like_article():

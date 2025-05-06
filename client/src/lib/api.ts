@@ -100,7 +100,15 @@ export async function login(username: string, password: string): Promise<LoginRe
     throw new Error(`HTTP error! status: ${response.status}`);
   }
 
-  return response.json();
+  const loginResponse = await response.json();
+  
+  // If login response includes likes, store them in localStorage
+  if (loginResponse.likes && Array.isArray(loginResponse.likes)) {
+    localStorage.setItem('likedArticles', JSON.stringify(loginResponse.likes));
+    console.log('Stored likes from login response:', loginResponse.likes);
+  }
+  
+  return loginResponse;
 }
 
 export async function register(user: User): Promise<{ msg: string }> {
@@ -151,10 +159,39 @@ export function getUserId(): string | null {
   return null;
 }
 
+/**
+ * Fetch a user's likes from the server
+ */
+export async function getUserLikes(userId: string): Promise<string[]> {
+  try {
+    const response = await fetch(`${API_URL}/api/user/likes/${userId}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.success && Array.isArray(data.likes)) {
+      // Update localStorage with the latest likes
+      localStorage.setItem('likedArticles', JSON.stringify(data.likes));
+      return data.likes;
+    }
+    
+    return [];
+  } catch (error) {
+    console.error('Error fetching user likes:', error);
+    // Return current localStorage likes as fallback
+    const currentLikes = localStorage.getItem('likedArticles');
+    return currentLikes ? JSON.parse(currentLikes) : [];
+  }
+}
+
 // Add a function to logout
 export function logout(): void {
   if (typeof window !== 'undefined') {
     localStorage.removeItem('token');
     localStorage.removeItem('userId');
+    localStorage.removeItem('likedArticles'); // Also clear likes on logout
   }
 }
