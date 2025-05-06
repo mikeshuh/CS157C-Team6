@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { getArticles } from '@/lib/api';
+import { getArticles, likeArticle, getUserId, isAuthenticated } from '@/lib/api';
 import { Article } from '@/lib/types';
 
 export default function ArticlePage() {
@@ -15,6 +15,9 @@ export default function ArticlePage() {
   const [article, setArticle] = useState<Article | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isLiked, setIsLiked] = useState(false);
+  const [isLiking, setIsLiking] = useState(false);
+  const [userAuthenticated, setUserAuthenticated] = useState(false);
 
   useEffect(() => {
     const fetchArticle = async () => {
@@ -39,7 +42,63 @@ export default function ArticlePage() {
     };
 
     fetchArticle();
+    
+    // Check if user is authenticated
+    setUserAuthenticated(isAuthenticated());
+    
+    // Check if article is in user's likes
+    const checkIfLiked = async () => {
+      if (typeof window !== 'undefined') {
+        // In a real implementation, you would have an API to get user's likes
+        // For now, we'll use localStorage to maintain liked state
+        const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+        setIsLiked(likedArticles.includes(id));
+      }
+    };
+    
+    checkIfLiked();
   }, [id]);
+  
+  const handleLike = async () => {
+    if (!userAuthenticated) {
+      alert('Please log in to like articles');
+      return;
+    }
+    
+    const userId = getUserId();
+    if (!userId) {
+      alert('User ID not found. Please log in again.');
+      return;
+    }
+    
+    try {
+      setIsLiking(true);
+      await likeArticle(userId, id);
+      
+      // Toggle like state
+      const newLikedState = !isLiked;
+      setIsLiked(newLikedState);
+      
+      // Update local storage
+      const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+      if (newLikedState) {
+        if (!likedArticles.includes(id)) {
+          likedArticles.push(id);
+        }
+      } else {
+        const index = likedArticles.indexOf(id);
+        if (index > -1) {
+          likedArticles.splice(index, 1);
+        }
+      }
+      localStorage.setItem('likedArticles', JSON.stringify(likedArticles));
+    } catch (error) {
+      console.error('Error liking article:', error);
+      alert('Failed to like article. Please try again.');
+    } finally {
+      setIsLiking(false);
+    }
+  };
 
   // Format date to a readable format
   const formatDate = (dateString: string) => {
@@ -126,13 +185,38 @@ export default function ArticlePage() {
               <span className="mr-4">{getSourceFromArticle(article)}</span>
               <span>{article.published_date ? formatDate(article.published_date) : "Date unavailable"}</span>
             </div>
-            <Link 
-              href={article.url} 
-              target="_blank" 
-              className="text-blue-600 hover:text-blue-800 hover:underline"
-            >
-              Read original article
-            </Link>
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={handleLike}
+                className={`flex items-center gap-1 ${isLiking ? 'cursor-wait' : 'cursor-pointer'}`}
+                disabled={isLiking}
+              >
+                <svg 
+                  xmlns="http://www.w3.org/2000/svg" 
+                  width="20" 
+                  height="20" 
+                  fill={isLiked ? 'currentColor' : 'none'} 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor" 
+                  className={`${isLiked ? 'text-red-500' : 'text-gray-600'}`}
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={isLiked ? 0 : 2} 
+                    d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+                  />
+                </svg>
+                <span className="text-sm">{isLiked ? 'Liked' : 'Like'}</span>
+              </button>
+              <Link 
+                href={article.url} 
+                target="_blank" 
+                className="text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                Read original article
+              </Link>
+            </div>
           </div>
         </div>
       </header>

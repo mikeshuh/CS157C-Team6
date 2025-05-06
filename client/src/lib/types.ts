@@ -40,6 +40,13 @@ export interface User {
 
 export interface LoginResponse {
   access_token: string;
+  user_id?: string; // Added to match the updated backend response
+}
+
+export interface LikeResponse {
+  success: boolean;
+  user_modified_count: number;
+  error?: string;
 }
 
 export interface AuthState {

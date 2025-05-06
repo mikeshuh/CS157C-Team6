@@ -1,5 +1,5 @@
 // lib/api.ts
-import { ArticleResponse, GenerateArticlesResponse, LoginResponse, User } from './types';
+import { ArticleResponse, GenerateArticlesResponse, LoginResponse, User, LikeResponse } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -46,6 +46,45 @@ export async function generateArticles(params: {
   }
 
   return response.json();
+}
+
+export async function likeArticle(userId: string, articleId: string): Promise<LikeResponse> {
+  // Make sure we have a valid user ID  
+  if (!userId || userId === 'undefined' || userId.includes('[object')) {
+    console.error('Invalid user ID provided:', userId);
+    throw new Error('Invalid user ID. Please log in again.');
+  }
+  
+  // Log the data we're sending for debugging
+  console.log('Sending like request with:', { userId, articleId });
+  
+  try {
+    // Create the request data
+    const requestData = { user_id: userId, article_id: articleId };
+    console.log('Request payload:', JSON.stringify(requestData));
+    
+    const response = await fetch(`${API_URL}/api/like_article`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestData),
+    });
+
+    // Even if response is not ok, get the full error message from the server
+    const data = await response.json();
+    console.log('Like response:', data);
+    
+    if (!response.ok) {
+      // Include the server's error message if available
+      throw new Error(`HTTP error! status: ${response.status}, message: ${data.error || 'Unknown error'}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error in likeArticle:', error);
+    throw error;
+  }
 }
 
 export async function login(username: string, password: string): Promise<LoginResponse> {
@@ -96,9 +135,26 @@ export function getToken(): string | null {
   return null;
 }
 
+// Get user ID from localStorage
+export function getUserId(): string | null {
+  if (typeof window !== 'undefined') {
+    const userId = localStorage.getItem('userId');
+    
+    // Make sure it's a valid string and not an object
+    if (userId && typeof userId === 'string' && userId !== 'undefined' && !userId.includes('[object')) {
+      return userId;
+    } else {
+      console.error('Invalid user ID found in localStorage:', userId);
+      return null;
+    }
+  }
+  return null;
+}
+
 // Add a function to logout
 export function logout(): void {
   if (typeof window !== 'undefined') {
     localStorage.removeItem('token');
+    localStorage.removeItem('userId');
   }
 }

@@ -82,6 +82,32 @@ function LoginContent() {
         // Store token in localStorage
         localStorage.setItem('token', response.access_token);
         
+        // Store user ID directly from the login response
+        if (response.user_id) {
+          localStorage.setItem('userId', response.user_id);
+          console.log('Saved user ID from response:', response.user_id);
+        } else {
+          console.error('No user_id returned from login response');
+          // Fallback: Extract from JWT token
+          try {
+            // Decode the JWT payload
+            const base64Payload = response.access_token.split('.')[1];
+            const payload = JSON.parse(atob(base64Payload));
+            console.log('Token payload:', payload);
+            
+            // Check for user ID in common JWT fields as fallback
+            if (payload.identity && typeof payload.identity === 'string') {
+              localStorage.setItem('userId', payload.identity);
+              console.log('Saved user ID from token payload:', payload.identity);
+            } else if (payload.sub && typeof payload.sub === 'string') {
+              localStorage.setItem('userId', payload.sub);
+              console.log('Saved user ID from token sub:', payload.sub);
+            }
+          } catch (err) {
+            console.error('Error extracting ID from token:', err);
+          }
+        }
+        
         // Redirect to home page
         router.push('/');
       }

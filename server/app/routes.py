@@ -345,7 +345,11 @@ def login():
         
         access_token = create_access_token(identity=user_claims)
         
-        return jsonify({'access_token': access_token}), 200
+        # Return the user's MongoDB ID along with the token
+        return jsonify({
+            'access_token': access_token,
+            'user_id': str(user['_id'])
+        }), 200
     
     except Exception as e:
         print(f"Login error: {str(e)}")
