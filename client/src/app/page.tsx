@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getArticles, generateArticles } from '@/lib/api';
 import { Article } from '@/lib/types';
@@ -26,21 +26,35 @@ const CATEGORIES = [
   "Lifestyle"
 ];
 
-export default function Home() {
+// Loading component for Suspense fallback
+function NewsLoading() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="animate-spin h-12 w-12 border-4 border-gray-900 rounded-full border-t-transparent"></div>
+    </div>
+  );
+}
+
+// Client component that uses hooks
+function HomeContent() {
   const searchParams = useSearchParams();
-  const categoryParam = searchParams.get('category');
+  const categoryParam = searchParams?.get('category');
   
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [news, setNews] = useState<Article[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentDate, setCurrentDate] = useState("");
   
-  const currentDate = new Date().toLocaleDateString('en-US', { 
-    weekday: 'long', 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
-  });
+  // Set the current date on the client side
+  useEffect(() => {
+    setCurrentDate(new Date().toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    }));
+  }, []);
 
   // Set selected category from URL parameter
   useEffect(() => {
@@ -226,5 +240,14 @@ export default function Home() {
         </div>
       </footer>
     </main>
+  );
+}
+
+// Main page component with Suspense boundary
+export default function Home() {
+  return (
+    <Suspense fallback={<NewsLoading />}>
+      <HomeContent />
+    </Suspense>
   );
 }

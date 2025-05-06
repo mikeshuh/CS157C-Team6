@@ -1,14 +1,24 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { login } from '@/lib/api';
 
-export default function Login() {
+// Loading component for Suspense fallback
+function LoginLoading() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="animate-spin h-8 w-8 border-4 border-gray-900 rounded-full border-t-transparent"></div>
+    </div>
+  );
+}
+
+// Client component with hooks
+function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const justRegistered = searchParams.get('registered') === 'true';
+  const justRegistered = searchParams?.get('registered') === 'true';
   
   const [formData, setFormData] = useState({
     username: '',
@@ -75,7 +85,7 @@ export default function Login() {
         // Redirect to home page
         router.push('/');
       }
-    } catch (error: any) {
+    } catch (error: Error | unknown) {
       console.error('Login error:', error);
       setServerError('Invalid username or password. Please try again.');
     } finally {
@@ -171,5 +181,14 @@ export default function Login() {
         </div>
       </div>
     </main>
+  );
+}
+
+// Main Login component with Suspense boundary
+export default function Login() {
+  return (
+    <Suspense fallback={<LoginLoading />}>
+      <LoginContent />
+    </Suspense>
   );
 }
