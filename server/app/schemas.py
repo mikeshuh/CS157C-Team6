@@ -1,4 +1,4 @@
-from marshmallow import Schema, fields, INCLUDE, EXCLUDE
+from marshmallow import Schema, fields, INCLUDE, EXCLUDE, validate
 
 class SummarizationSchema(Schema):
     summary = fields.Str(required=True)
@@ -20,8 +20,9 @@ class ArticleSchema(Schema):
 class UserSchema(Schema):
     class Meta:
         unknown = EXCLUDE
-    username = fields.Str(required=True)
-    password = fields.Str(required=True)
+    username = fields.Str(required=True, validate=validate.Length(min=3))
+    email = fields.Email(required=True)
+    password = fields.Str(required=True, validate=validate.Length(min=8))
     role = fields.Str(missing="user")
     likes = fields.List(fields.Str, missing=list)
 
