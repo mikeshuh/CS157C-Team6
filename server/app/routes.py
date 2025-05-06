@@ -157,21 +157,6 @@ def get_articles():
         "articles": article_schema.dump(articles, many=True)
     })
 
-@main.route('/api/test_scraper', methods=['POST'])
-def test_scraper():
-    content_type = request.headers.get('Content-Type')
-    if content_type == 'application/json':
-        data = request.get_json()
-    elif content_type == 'application/x-www-form-urlencoded':
-        data = request.form.to_dict()
-    else:
-        return jsonify({"error": "Unsupported Content-Type"})
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid data"})
-    
-    response = scrape_tester(data["url"])
-    return response
-
 @main.route('/register', methods=['POST'])
 def register():
     '''
@@ -319,7 +304,7 @@ def scrape_article_test():
         'success' : True
     })
 
-@main.route('/api/generate_articles', methods=['GET', 'POST'])
+@main.route('/api/generate_articles', methods=['POST'])
 def generate_articles():
     '''
     Generate articles based on the provided keywords.
