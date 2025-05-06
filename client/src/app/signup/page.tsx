@@ -1,11 +1,21 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { register } from '@/lib/api';
 
-export default function SignUp() {
+// Loading component for Suspense fallback
+function SignUpLoading() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="animate-spin h-8 w-8 border-4 border-gray-900 rounded-full border-t-transparent"></div>
+    </div>
+  );
+}
+
+// Client component with hooks
+function SignUpContent() {
   const router = useRouter();
   const [formData, setFormData] = useState({
     username: '',
@@ -105,13 +115,15 @@ export default function SignUp() {
         // Registration successful, redirect to login
         router.push('/login?registered=true');
       }
-    } catch (error: any) {
+    } catch (error: Error | unknown) {
       console.error('Registration error:', error);
       // Handle different error cases
-      if (error.message.includes('User already exists')) {
+      const errorMessage = error instanceof Error ? error.message : 'Registration failed. Please try again.';
+      
+      if (errorMessage.includes('User already exists')) {
         setErrors({ ...errors, username: 'Username already exists' });
       } else {
-        setServerError(error.message || 'Registration failed. Please try again.');
+        setServerError(errorMessage);
       }
     } finally {
       setIsSubmitting(false);
@@ -254,5 +266,14 @@ export default function SignUp() {
         </div>
       </div>
     </main>
+  );
+}
+
+// Main SignUp component with Suspense boundary
+export default function SignUp() {
+  return (
+    <Suspense fallback={<SignUpLoading />}>
+      <SignUpContent />
+    </Suspense>
   );
 }

@@ -24,12 +24,12 @@ export default function About() {
             <p className="text-gray-800 leading-relaxed mb-4">
               Briefly is a modern news aggregator built to help you stay informed without being overwhelmed. 
               We understand that keeping up with the news can be time-consuming and sometimes stressful, 
-              which is why we've created a platform that delivers concise, AI-powered summaries of the most 
+              which is why we&apos;ve created a platform that delivers concise, AI-powered summaries of the most 
               important stories from around the web.
             </p>
             <p className="text-gray-800 leading-relaxed">
-              Our goal is to empower you with knowledge, saving you time while ensuring you don't miss 
-              out on what matters most. Whether you're interested in world news, technology, business, 
+              Our goal is to empower you with knowledge, saving you time while ensuring you don&apos;t miss 
+              out on what matters most. Whether you&apos;re interested in world news, technology, business, 
               or entertainment, Briefly curates and summarizes the latest developments so you can quickly 
               grasp the essential information.
             </p>
