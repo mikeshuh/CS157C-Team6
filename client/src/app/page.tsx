@@ -1,7 +1,7 @@
-// app/page.tsx
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { getArticles, generateArticles } from '@/lib/api';
 import { Article } from '@/lib/types';
 import ArticleCard from '@/components/ArticleCard';
@@ -27,6 +27,9 @@ const CATEGORIES = [
 ];
 
 export default function Home() {
+  const searchParams = useSearchParams();
+  const categoryParam = searchParams.get('category');
+  
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [news, setNews] = useState<Article[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,6 +41,15 @@ export default function Home() {
     month: 'long', 
     day: 'numeric' 
   });
+
+  // Set selected category from URL parameter
+  useEffect(() => {
+    if (categoryParam && CATEGORIES.includes(categoryParam)) {
+      setSelectedCategory(categoryParam);
+    } else if (categoryParam) {
+      setSelectedCategory("All"); // Reset to All if invalid category
+    }
+  }, [categoryParam]);
 
   // Fetch news from API
   useEffect(() => {
@@ -64,10 +76,19 @@ export default function Home() {
   // Handle generating articles
   const handleGenerateArticles = async () => {
     try {
+      setIsLoading(true);
       await generateArticles({ q: 'latest news' });
-      window.location.reload();
+      // Refresh articles after generation
+      const response = await getArticles(
+        selectedCategory === "All" ? {} : { tags: [selectedCategory] }
+      );
+      const validArticles = response.articles.filter(article => article.summarization && article.summarization.summary);
+      setNews(validArticles);
     } catch (err) {
       console.error('Error generating articles:', err);
+      setError('Failed to generate articles. Please try again later.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -95,7 +116,7 @@ export default function Home() {
       </header>
 
       {/* Category Navigation */}
-      <section className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
+      <section className="sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
         <div className="container mx-auto px-4 py-2">
           <div className="overflow-x-auto flex gap-2 pb-2">
             {CATEGORIES.map((category) => (
@@ -137,10 +158,25 @@ export default function Home() {
         ) : news.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-gray-600 mb-4">No articles found for this category.</p>
-            <p className="text-sm text-gray-500">Try selecting a different category or check back later.</p>
+            <p className="text-sm text-gray-500 mb-6">Try selecting a different category or generate new articles.</p>
+            <button 
+              onClick={handleGenerateArticles}
+              className="bg-gray-900 text-white px-4 py-2 rounded font-serif hover:bg-gray-800 transition"
+            >
+              Generate Articles
+            </button>
           </div>
         ) : (
           <>
+            {/* Show category title when a specific category is selected */}
+            {selectedCategory !== "All" && (
+              <div className="mb-6">
+                <h2 className="text-3xl font-serif font-bold border-b border-gray-300 pb-2">
+                  {selectedCategory}
+                </h2>
+              </div>
+            )}
+
             {/* Featured Article - using first article */}
             {news[0] && <ArticleCard article={news[0]} featured={true} />}
 
@@ -154,23 +190,25 @@ export default function Home() {
         )}
       </div>
 
-      {/* Generate Articles Button - for development/testing */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="fixed bottom-4 right-4">
-          <button 
-            onClick={handleGenerateArticles}
-            className="bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg font-serif hover:bg-blue-700 transition"
-          >
-            Generate Articles
-          </button>
-        </div>
-      )}
+      {/* Generate Articles Button */}
+      <div className="fixed bottom-4 right-4">
+        <button 
+          onClick={handleGenerateArticles}
+          className="bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg font-serif hover:bg-blue-700 transition"
+          disabled={isLoading}
+        >
+          {isLoading ? 'Generating...' : 'Generate Articles'}
+        </button>
+      </div>
 
       {/* Simple Call to Action */}
       <section className="py-8 bg-gray-100 border-t border-gray-200">
         <div className="container mx-auto px-4 text-center">
           <h2 className="text-2xl font-serif font-bold mb-4">Ready to personalize your news?</h2>
-          <button className="bg-gray-900 text-white px-6 py-2 rounded font-serif hover:bg-gray-800 transition">
+          <button 
+            onClick={() => window.location.href = "/signup"}
+            className="bg-gray-900 text-white px-6 py-2 rounded font-serif hover:bg-gray-800 transition"
+          >
             Sign Up Now
           </button>
         </div>
