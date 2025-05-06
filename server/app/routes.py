@@ -206,6 +206,73 @@ def generate_articles():
             "error": str(e),
         })
     
+@main.route('/api/personalized_articles/<user_id>', methods=['GET'])
+def personalized_articles(user_id):
+    '''
+    Returns personalized article recommendations based on a user's liked articles.
+    Analyzes the tags of articles the user has liked and returns other articles with similar tags.
+    '''
+    try:
+        # Convert user_id to ObjectId
+        try:
+            user_obj_id = ObjectId(user_id)
+        except Exception:
+            return jsonify({"success": False, "error": "Invalid user_id format"}), 400
+        
+        # Get the user and their likes
+        user = mongo.db.users.find_one({'_id': user_obj_id})
+        if not user or 'likes' not in user or not user['likes']:
+            # If user has no likes, return regular articles
+            return get_articles()
+        
+        # Get all liked articles
+        liked_article_ids = [ObjectId(article_id) for article_id in user['likes']]
+        liked_articles = list(mongo.db.articles.find({'_id': {'$in': liked_article_ids}}))
+        
+        # Extract all tags from liked articles
+        preferred_tags = []
+        for article in liked_articles:
+            if 'summarization' in article and 'tags' in article['summarization']:
+                preferred_tags.extend(article['summarization']['tags'])
+        
+        # Count tag occurrences to find most preferred categories
+        tag_counts = {}
+        for tag in preferred_tags:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        
+        # Get top 3 preferred tags (or all if fewer than 3)
+        top_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)
+        top_tags = [tag for tag, count in top_tags[:3]]
+        
+        # Find articles matching these tags (excluding already liked articles)
+        recommended_articles = list(mongo.db.articles.find({
+            '_id': {'$nin': liked_article_ids},
+            'summarization.tags': {'$in': top_tags}
+        }).limit(10))
+        
+        # If not enough recommendations, add some general articles
+        if len(recommended_articles) < 10:
+            additional_articles = list(mongo.db.articles.find({
+                '_id': {'$nin': liked_article_ids + [article['_id'] for article in recommended_articles]}
+            }).limit(10 - len(recommended_articles)))
+            recommended_articles.extend(additional_articles)
+        
+        # Convert ObjectId to string for JSON serialization
+        for article in recommended_articles:
+            article['_id'] = str(article['_id'])
+        
+        return jsonify({
+            'success': True,
+            'num_found': len(recommended_articles),
+            'preferred_tags': top_tags,
+            'articles': recommended_articles
+        })
+        
+    except Exception as e:
+        print(f"Error generating personalized articles: {str(e)}")
+        # Fallback to regular articles API
+        return get_articles()
+
 @main.route('/api/get_articles', methods=['GET'])
 def get_articles():
     title = request.args.get('title')

@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { getArticles, generateArticles } from '@/lib/api';
+import { getArticles, generateArticles, getPersonalizedArticles, getUserId, isAuthenticated } from '@/lib/api';
 import { Article } from '@/lib/types';
 import ArticleCard from '@/components/ArticleCard';
 import Image from 'next/image';
 
 // Update categories to match backend tags
 const CATEGORIES = [
+  "For You", // New personalized feed
   "All", 
   "World News", 
   "Politics", 
@@ -46,6 +47,8 @@ function HomeContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState("");
+  const [personalizationMessage, setPersonalizationMessage] = useState<string | null>(null);
+  const [likeUpdateTrigger, setLikeUpdateTrigger] = useState(0); // To trigger refresh on like changes
   
   // Set the current date on the client side
   useEffect(() => {
@@ -66,14 +69,92 @@ function HomeContent() {
     }
   }, [categoryParam]);
 
+  // Watch for like changes in localStorage to refresh personalized feed
+  useEffect(() => {
+    // Only run on client side
+    if (typeof window === 'undefined') return;
+
+    const handleLikeChange = (e: StorageEvent) => {
+      // Only trigger refresh if on For You tab and user is authenticated
+      if (e.key === 'likedArticles' && selectedCategory === "For You" && isAuthenticated()) {
+        // Increment the trigger to force a refresh
+        setLikeUpdateTrigger(prev => prev + 1);
+      }
+    };
+
+    // Listen for storage events from other tabs/windows
+    window.addEventListener('storage', handleLikeChange);
+
+    return () => {
+      window.removeEventListener('storage', handleLikeChange);
+    };
+  }, [selectedCategory]);
+  
+  // Set up an interval to check for local like changes (within same tab)
+  useEffect(() => {
+    if (typeof window === 'undefined' || selectedCategory !== "For You") return;
+    
+    let prevLikedArticles = localStorage.getItem('likedArticles');
+    
+    const checkLikeChanges = setInterval(() => {
+      const currentLikedArticles = localStorage.getItem('likedArticles');
+      if (prevLikedArticles !== currentLikedArticles) {
+        prevLikedArticles = currentLikedArticles;
+        if (isAuthenticated()) {
+          setLikeUpdateTrigger(prev => prev + 1);
+        }
+      }
+    }, 2000); // Check every 2 seconds
+    
+    return () => clearInterval(checkLikeChanges);
+  }, [selectedCategory]);
+
   // Fetch news from API
   useEffect(() => {
     const fetchNews = async () => {
       setIsLoading(true);
       setError(null);
+      setPersonalizationMessage(null);
+      
       try {
-        const params = selectedCategory === "All" ? {} : { tags: [selectedCategory] };
-        const response = await getArticles(params);
+        let response;
+        const userId = getUserId();
+        
+        if (selectedCategory === "For You") {
+          // Check authentication status without logging errors
+          const authenticated = isAuthenticated();
+          
+          // Handle the "For You" personalized feed
+          if (authenticated && userId) {
+            // Get personalized articles for logged-in users
+            try {
+              response = await getPersonalizedArticles(userId);
+              
+              // Display personalization message if we have preferred tags
+              if (response.preferred_tags?.length) {
+                setPersonalizationMessage(
+                  `Articles personalized based on your interests: ${response.preferred_tags.join(', ')}`
+                );
+              } else {
+                // User is logged in but doesn't have preferred tags yet
+                setPersonalizationMessage('Like some articles to personalize your feed!');
+              }
+            } catch (error) {
+              console.error('Error fetching personalized articles:', error);
+              response = await getArticles();
+              setPersonalizationMessage('Could not retrieve personalized articles. Showing default content.');
+            }
+          } else {
+            // User is not logged in, show regular articles with a message
+            response = await getArticles();
+            setPersonalizationMessage('Log in and like articles to get personalized recommendations!');
+          }
+        } else {
+          // Regular category filtering
+          const params = selectedCategory === "All" ? {} : { tags: [selectedCategory] };
+          response = await getArticles(params);
+        }
+        
         // Filter out articles without summarization
         const validArticles = response.articles.filter(article => article.summarization && article.summarization.summary);
         setNews(validArticles);
@@ -86,7 +167,7 @@ function HomeContent() {
     };
 
     fetchNews();
-  }, [selectedCategory]);
+  }, [selectedCategory, likeUpdateTrigger]); // Add likeUpdateTrigger to dependencies
 
   // Handle generating articles
   const handleGenerateArticles = async () => {
@@ -198,6 +279,20 @@ function HomeContent() {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 mb-12 mt-6">
+        {personalizationMessage && (
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6 rounded-r shadow-sm">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-blue-700">{personalizationMessage}</p>
+              </div>
+            </div>
+          </div>
+        )}
         {isLoading ? (
           <div className="flex justify-center py-12">
             <div className="animate-spin h-8 w-8 border-4 border-gray-900 rounded-full border-t-transparent"></div>
@@ -276,7 +371,7 @@ function HomeContent() {
                   
                   {/* Read Full Article Button */}
                   <a 
-                    href={`/article/${news[0].id}`}
+                    href={`/article/${news[0]._id}`}
                     className="mt-4 block bg-gray-900 text-white px-4 py-2 text-center hover:bg-gray-800 transition"
                   >
                     Read Article
@@ -287,8 +382,11 @@ function HomeContent() {
 
             {/* News Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {news.slice(1).map((article) => (
-                <ArticleCard key={article.id} article={article} />
+              {news.slice(1).map((article, index) => (
+                <ArticleCard 
+                  key={article._id ? String(article._id) : `article-${index}`} 
+                  article={article} 
+                />
               ))}
             </div>
           </>

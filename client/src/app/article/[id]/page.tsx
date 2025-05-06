@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, use } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -8,10 +8,9 @@ import { getArticles, likeArticle, getUserId, isAuthenticated, getUserLikes } fr
 import { Article } from '@/lib/types';
 
 export default function ArticlePage() {
-  // Use the useParams hook to get the id parameter from the URL
+  // Get the id parameter from the URL using useParams
   const params = useParams();
-  const id = params?.id as string;
-
+  const id = Array.isArray(params.id) ? params.id[0] : params.id as string;
   const [article, setArticle] = useState<Article | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +25,7 @@ export default function ArticlePage() {
       try {
         // Fetch all articles and find the one with matching ID
         const response = await getArticles();
-        const foundArticle = response.articles.find(a => a.id === id);
+        const foundArticle = response.articles.find(a => a._id === id || a.id === id);
         
         if (foundArticle) {
           setArticle(foundArticle);
@@ -68,13 +67,15 @@ export default function ArticlePage() {
           }
         }
         
-        setIsLiked(likedArticles.includes(id));
+        // Get the article ID in a flexible way - handle both MongoDB _id and legacy id
+        const articleId = article?._id || article?.id || id;
+        setIsLiked(articleId ? likedArticles.includes(articleId) : false);
       }
     };
     
     checkIfLiked();
-  }, [id]);
-  
+  }, [article, id, userAuthenticated]);
+
   const handleLike = async () => {
     if (!userAuthenticated) {
       alert('Please log in to like articles');
@@ -86,10 +87,19 @@ export default function ArticlePage() {
       alert('User ID not found. Please log in again.');
       return;
     }
+
+    // Make sure we have a valid article ID before sending the request
+    const articleId = article?._id || article?.id || id;
+    if (!articleId) {
+      console.error('Missing article ID for like operation:', article);
+      alert('Please try again. Could not process this article.');
+      return;
+    }
     
     try {
       setIsLiking(true);
-      await likeArticle(userId, id);
+      console.log('Attempting to like article with ID:', articleId);
+      await likeArticle(userId, articleId);
       
       // Toggle like state
       const newLikedState = !isLiked;
@@ -98,11 +108,11 @@ export default function ArticlePage() {
       // Update local storage
       const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
       if (newLikedState) {
-        if (!likedArticles.includes(id)) {
-          likedArticles.push(id);
+        if (articleId && !likedArticles.includes(articleId)) {
+          likedArticles.push(articleId);
         }
       } else {
-        const index = likedArticles.indexOf(id);
+        const index = articleId ? likedArticles.indexOf(articleId) : -1;
         if (index > -1) {
           likedArticles.splice(index, 1);
         }

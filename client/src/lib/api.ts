@@ -29,6 +29,26 @@ export async function getArticles(params: {
   return response.json();
 }
 
+/**
+ * Fetch personalized article recommendations for a user based on their likes
+ * @param userId The MongoDB ID of the user to get recommendations for
+ */
+export async function getPersonalizedArticles(userId: string): Promise<ArticleResponse & { preferred_tags?: string[] }> {
+  try {
+    const response = await fetch(`${API_URL}/api/personalized_articles/${userId}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('Error fetching personalized articles:', error);
+    // If personalization fails, fall back to regular articles
+    return getArticles();
+  }
+}
+
 export async function generateArticles(params: {
   q?: string;
   searchIn?: string;
@@ -50,15 +70,32 @@ export async function generateArticles(params: {
 
 export async function likeArticle(userId: string, articleId: string): Promise<LikeResponse> {
   // Make sure we have a valid user ID  
-  if (!userId || userId === 'undefined' || userId.includes('[object')) {
-    console.error('Invalid user ID provided:', userId);
-    throw new Error('Invalid user ID. Please log in again.');
-  }
-  
-  // Log the data we're sending for debugging
-  console.log('Sending like request with:', { userId, articleId });
-  
   try {
+    // Validate inputs
+    if (!userId) {
+      console.error('likeArticle called with empty userId');
+      throw new Error('Missing user_id');
+    }
+    
+    if (!articleId) {
+      console.error('likeArticle called with empty articleId');
+      throw new Error('Missing article_id');
+    }
+    
+    console.log('likeArticle debug - userId:', userId);
+    console.log('likeArticle debug - articleId:', articleId);
+    console.log('likeArticle debug - userId type:', typeof userId);
+    console.log('likeArticle debug - articleId type:', typeof articleId);
+    
+    // Make sure we have a valid user ID  
+    if (userId === 'undefined' || userId.includes('[object')) {
+      console.error('Invalid user ID provided:', userId);
+      throw new Error('Invalid user ID. Please log in again.');
+    }
+    
+    // Log the data we're sending for debugging
+    console.log('Sending like request with:', { userId, articleId });
+    
     // Create the request data
     const requestData = { user_id: userId, article_id: articleId };
     console.log('Request payload:', JSON.stringify(requestData));
@@ -152,7 +189,10 @@ export function getUserId(): string | null {
     if (userId && typeof userId === 'string' && userId !== 'undefined' && !userId.includes('[object')) {
       return userId;
     } else {
-      console.error('Invalid user ID found in localStorage:', userId);
+      // Only log error if there is a malformed userId (not for null, which is expected when not logged in)
+      if (userId && (userId === 'undefined' || userId.includes('[object'))) {
+        console.error('Invalid user ID format found in localStorage:', userId);
+      }
       return null;
     }
   }

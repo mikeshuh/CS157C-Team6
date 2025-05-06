@@ -13,37 +13,43 @@ export default function ArticleCard({ article, featured = false }: ArticleCardPr
   const [isLiked, setIsLiked] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
   const [userAuthenticated, setUserAuthenticated] = useState(false);
+  
+  // Ensure we have a proper article._id - MongoDB might return it in different formats
+  // In some cases, it might be in article._id or it might be in article.id
+  const articleId = article?._id || article?.id;
 
   useEffect(() => {
     // Check if user is authenticated
     const authenticated = isAuthenticated();
     setUserAuthenticated(authenticated);
     
-    // Check if article is in user's likes
     const checkIfLiked = async () => {
-      if (typeof window !== 'undefined') {
-        // First check localStorage (faster)
-        const cachedLikes = localStorage.getItem('likedArticles');
-        let likedArticles: string[] = cachedLikes ? JSON.parse(cachedLikes) : [];
-        
-        // If user is authenticated, fetch fresh likes from server
-        const userId = getUserId();
-        if (authenticated && userId) {
-          try {
-            // Fetch up-to-date likes from the server
-            likedArticles = await getUserLikes(userId);
-          } catch (error) {
-            console.error('Error fetching likes:', error);
-            // Continue with cached likes if server fetch fails
-          }
+      // Skip like checks if user is not authenticated
+      if (!userAuthenticated) {
+        setIsLiked(false);
+        return;
+      }
+      
+      // Start with cached likes if available
+      const cachedLikes = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+      setIsLiked(articleId ? cachedLikes.includes(articleId) : false);
+      
+      // Then fetch from server to ensure we have the latest data
+      const userId = getUserId();
+      if (userId) {
+        try {
+          const likes = await getUserLikes(userId);
+          localStorage.setItem('likedArticles', JSON.stringify(likes));
+          setIsLiked(articleId ? likes.includes(articleId) : false);
+        } catch (error) {
+          console.error('Error fetching likes:', error);
+          // Continue with cached likes if server fetch fails
         }
-        
-        setIsLiked(likedArticles.includes(article.id));
       }
     };
     
     checkIfLiked();
-  }, [article.id]);
+  }, [articleId, userAuthenticated]);
 
   const handleLike = async (e: React.MouseEvent) => {
     e.preventDefault(); // Prevent navigation to article page
@@ -62,7 +68,17 @@ export default function ArticleCard({ article, featured = false }: ArticleCardPr
     
     try {
       setIsLiking(true);
-      await likeArticle(userId, article.id);
+      
+      // Make sure we have a valid article ID before sending the request
+      if (!articleId) {
+        console.error('Missing article ID for like operation:', article);
+        alert('Please try again. Could not process this article.');
+        setIsLiking(false);
+        return;
+      }
+      
+      console.log('Attempting to like article with ID:', articleId);
+      await likeArticle(userId, articleId);
       
       // Toggle like state
       const newLikedState = !isLiked;
@@ -71,11 +87,11 @@ export default function ArticleCard({ article, featured = false }: ArticleCardPr
       // Update local storage
       const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
       if (newLikedState) {
-        if (!likedArticles.includes(article.id)) {
-          likedArticles.push(article.id);
+        if (!likedArticles.includes(articleId)) {
+          likedArticles.push(articleId);
         }
       } else {
-        const index = likedArticles.indexOf(article.id);
+        const index = likedArticles.indexOf(articleId);
         if (index > -1) {
           likedArticles.splice(index, 1);
         }

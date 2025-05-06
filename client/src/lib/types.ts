@@ -6,7 +6,8 @@ export interface Summarization {
 }
 
 export interface Article {
-  id: string;
+  _id: string; // MongoDB's document ID
+  id?: string; // Keep original id as optional for backward compatibility
   title: string;
   author: string;
   published_date: string;
