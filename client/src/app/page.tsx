@@ -46,7 +46,15 @@ function HomeContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState("");
-  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [generationComplete, setGenerationComplete] = useState(false);
+  const [generatedArticles, setGeneratedArticles] = useState<Article[]>([]);
+  const openModal = () => setIsModalOpen(true);
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setGenerationComplete(false);
+  }
+    
   // Set the current date on the client side
   useEffect(() => {
     setCurrentDate(new Date().toLocaleDateString('en-US', { 
@@ -88,17 +96,34 @@ function HomeContent() {
     fetchNews();
   }, [selectedCategory]);
 
-  // Handle generating articles
-  const handleGenerateArticles = async () => {
+const handleGenerateArticles = async () => {
+  openModal();
+};
+
+
+const QueryModal = () => {
+  const [queryInput, setQueryInput] = useState('');
+
+  const handleModalSubmit = async () => {
     try {
       setIsLoading(true);
-      await generateArticles({ q: 'latest news' });
+      setGenerationComplete(false);
+      //console.log('User query:', queryInput);
+
+      // Close the modal
+      //closeModal();
+      // Use the queryInput from state
+      //await generateArticles({ q: queryInput });
+      const result = await generateArticles({ q: queryInput });
+      console.log(result.articles_processed)
+      setGeneratedArticles(result.articles_processed)
       // Refresh articles after generation
       const response = await getArticles(
         selectedCategory === "All" ? {} : { tags: [selectedCategory] }
       );
       const validArticles = response.articles.filter(article => article.summarization && article.summarization.summary);
       setNews(validArticles);
+      setGenerationComplete(true);
     } catch (err) {
       console.error('Error generating articles:', err);
       setError('Failed to generate articles. Please try again later.');
@@ -106,6 +131,86 @@ function HomeContent() {
       setIsLoading(false);
     }
   };
+
+  
+  return (
+    <div className={`fixed inset-0 z-50 flex items-center justify-center ${!isModalOpen ? 'hidden' : ''}`}>
+      <div className="absolute inset-0 bg-gray bg-opacity-50 backdrop-blur-sm"></div>
+
+      {/* Modal content */}
+      <div className="relative bg-white p-6 rounded-lg shadow-lg w-96 z-100">
+        <h3 className="text-lg font-medium mb-4">Generate Articles</h3>
+
+        {!generationComplete ? (
+          <>
+            {!isLoading && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Search query:
+                </label>
+                <input
+                  type="text"
+                  value={queryInput}
+                  onChange={(e) => setQueryInput(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded"
+                  placeholder="Enter search query"
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={closeModal}
+                disabled={isLoading}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleModalSubmit}
+                disabled={isLoading}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isLoading ? 'Loading...' : 'Generate'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-green-600 text-center mb-4">
+              Articles generated successfully!
+            </div>
+            <div className="mt-6 space-y-4">
+              {generatedArticles.length > 0 && (
+                <>
+                  <h3 className="text-xl font-bold mb-2">Generated Articles:</h3>
+                  {generatedArticles.map((article) => (
+                    <div 
+                      key={article.id} 
+                      className="p-4 border border-gray-300 rounded shadow-sm bg-white"
+                    >
+                      <p className="font-semibold text-gray-800">Title: {article.title}</p>
+                      <p className="text-gray-600 text-sm">ID: {article.id}</p>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+            <div className="flex justify-center">
+              <button
+                onClick={closeModal}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Close
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 
   // Format featured article data
   const formatFeaturedArticle = (article: Article) => {
@@ -258,7 +363,7 @@ function HomeContent() {
                     <div className="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent opacity-90"></div>
                     
                     {/* Text Container - Positioned at Bottom */}
-                    <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 text-white z-10">
+                    <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 text-white">
                       <h2 className="text-2xl md:text-3xl font-serif font-bold mb-3">
                         {formatFeaturedArticle(news[0])?.title}
                       </h2>
@@ -296,7 +401,7 @@ function HomeContent() {
       </div>
 
       {/* Generate Articles Button */}
-      <div className="fixed bottom-4 right-4">
+      <div className="fixed bottom-4 right-4">    
         <button 
           onClick={handleGenerateArticles}
           className="bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg font-serif hover:bg-blue-700 transition"
@@ -304,6 +409,7 @@ function HomeContent() {
         >
           {isLoading ? 'Generating...' : 'Generate Articles'}
         </button>
+        <QueryModal/>
       </div>
 
       {/* Simple Call to Action */}
