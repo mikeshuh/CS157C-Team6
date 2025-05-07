@@ -135,10 +135,10 @@ const QueryModal = () => {
   
   return (
     <div className={`fixed inset-0 z-50 flex items-center justify-center ${!isModalOpen ? 'hidden' : ''}`}>
-      <div className="absolute inset-0 bg-gray bg-opacity-50 backdrop-blur-sm"></div>
+      <div className="fixed inset-0 bg-gray bg-opacity-50 backdrop-blur-sm"></div>
 
       {/* Modal content */}
-      <div className="relative bg-white p-6 rounded-lg shadow-lg w-96 z-100">
+      <div className="relative bg-gray-200 p-6 rounded-lg shadow-lg w-96 z-50">
         <h3 className="text-lg font-medium mb-4">Generate Articles</h3>
 
         {!generationComplete ? (
@@ -152,7 +152,7 @@ const QueryModal = () => {
                   type="text"
                   value={queryInput}
                   onChange={(e) => setQueryInput(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded"
+                  className="w-full p-2 border border-gray-800 rounded"
                   placeholder="Enter search query"
                 />
               </div>
@@ -409,9 +409,8 @@ const QueryModal = () => {
         >
           {isLoading ? 'Generating...' : 'Generate Articles'}
         </button>
-        <QueryModal/>
       </div>
-
+      <QueryModal/>
       {/* Simple Call to Action */}
       <section className="py-8 bg-gray-100 border-t border-gray-200">
         <div className="container mx-auto px-4 text-center">
