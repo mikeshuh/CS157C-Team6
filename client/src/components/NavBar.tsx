@@ -110,10 +110,10 @@ export default function NavBar() {
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 w-full">
-      <div className="container mx-auto px-4 relative">
-        <div className="flex items-center justify-center h-16">
-          {/* Logo and Search - Absolutely positioned left */}
-          <div className="absolute left-4 flex items-center">
+      <div className="container mx-auto px-4">
+        <div className="grid grid-cols-3 items-center h-16">
+          {/* Logo and Search - Left Column */}
+          <div className="flex items-center">
             <Link href="/" className="font-black text-2xl font-serif tracking-tight">
               BRIEFLY
             </Link>
@@ -151,8 +151,8 @@ export default function NavBar() {
             </div>
           </div>
           
-          {/* Center: Desktop Navigation - True center of page */}
-          <nav className="hidden md:flex space-x-6">
+          {/* Center: Desktop Navigation - Middle Column */}
+          <nav className="hidden md:flex justify-center space-x-6">
             <Link href="/" className="font-serif hover:text-gray-900 hover:underline">Home</Link>
             
             {/* Categories Dropdown */}
@@ -191,8 +191,8 @@ export default function NavBar() {
             <Link href="/about" className="font-serif hover:text-gray-900 hover:underline">About</Link>
           </nav>
           
-          {/* Auth Buttons and Mobile Menu - Absolutely positioned right */}
-          <div className="absolute right-4 flex items-center space-x-4">
+          {/* Auth Buttons and Mobile Menu - Right Column */}
+          <div className="flex items-center justify-end space-x-4">
             {/* Search bar - Mobile */}
             <div className="md:hidden">
               <button 
