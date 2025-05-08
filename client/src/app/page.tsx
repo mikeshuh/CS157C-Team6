@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { getArticles, generateArticles, getPersonalizedArticles, getUserLikedArticles, getUserId, isAuthenticated, getUserLikes, toggleArticleLike } from '@/lib/api';
+import { getArticles, generateArticles, getPersonalizedArticles, getUserLikedArticles, getUserId, isAuthenticated, getUserLikes, toggleArticleLike, deleteArticle, isAdmin } from '@/lib/api';
 import { Article } from '@/lib/types';
 import ArticleCard from '@/components/ArticleCard';
 import Image from 'next/image';
@@ -54,6 +54,9 @@ function HomeContent() {
   const [showLikedArticles, setShowLikedArticles] = useState(false); // Toggle between recommendations and liked articles
   const [featuredArticleLiked, setFeaturedArticleLiked] = useState(false); // Track if featured article is liked
   const [isLikingFeatured, setIsLikingFeatured] = useState(false); // Track if like operation is in progress
+  const [isUserAdmin, setIsUserAdmin] = useState(false); // Track if user is admin
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false); // Track if delete confirmation is shown
+  const [isDeleting, setIsDeleting] = useState(false); // Track if delete operation is in progress
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [generationComplete, setGenerationComplete] = useState(false);
   const [generatedArticles, setGeneratedArticles] = useState<Article[]>([]);
@@ -71,6 +74,9 @@ function HomeContent() {
       month: 'long', 
       day: 'numeric' 
     }));
+    
+    // Check if user is admin
+    setIsUserAdmin(isAdmin());
   }, []);
 
   // Set selected category from URL parameter
@@ -159,6 +165,20 @@ function HomeContent() {
     
     return () => clearInterval(checkLikeChanges);
   }, [selectedCategory]);
+
+  // Listen for logout events to update admin status
+  useEffect(() => {
+    const handleLogout = () => {
+      setIsUserAdmin(false);
+    };
+
+    window.addEventListener('userLogout', handleLogout);
+    
+    // Clean up the event listener when component unmounts
+    return () => {
+      window.removeEventListener('userLogout', handleLogout);
+    };
+  }, []);
 
   // Fetch news from API
   useEffect(() => {
@@ -605,6 +625,65 @@ const QueryModal = () => {
     }
   }, [news, filteredNews, searchQuery]);
 
+  // Featured article delete handlers
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setShowDeleteConfirm(true);
+  };
+
+  const handleCancelDelete = (e: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setShowDeleteConfirm(false);
+  };
+
+  const handleConfirmDelete = async (e: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    if (!filteredNews[0]) return;
+    
+    const articleId = filteredNews[0]._id || filteredNews[0].id;
+    if (!articleId) {
+      console.error('Missing article ID for delete operation');
+      return;
+    }
+    
+    try {
+      setIsDeleting(true);
+      console.log('Deleting featured article with ID:', articleId);
+      const result = await deleteArticle(articleId);
+      
+      if (result.success) {
+        console.log('Delete successful, removing article from state');
+        // Remove the article from the list
+        setFilteredNews(prev => prev.filter(article => {
+          const id = article._id || article.id;
+          return id !== articleId;
+        }));
+        setNews(prev => prev.filter(article => {
+          const id = article._id || article.id;
+          return id !== articleId;
+        }));
+      } else {
+        alert('Failed to delete article: ' + result.message);
+      }
+    } catch (error: any) {
+      console.error('Error deleting article:', error);
+      alert('Failed to delete article: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-gray-50">
       {/* Add a spacer at the top to ensure content starts below fixed navbar */}
@@ -827,29 +906,61 @@ const QueryModal = () => {
                     </div>
                   </div>
                   
-                  {/* Like Button */}
-                  <button 
-                    onClick={handleFeaturedLike}
-                    className={`absolute top-4 right-4 z-20 p-2 rounded-full bg-white bg-opacity-80 shadow-md transition ${isLikingFeatured ? 'cursor-wait' : 'cursor-pointer hover:bg-opacity-100'}`}
-                    disabled={isLikingFeatured}
-                  >
-                    <svg 
-                      xmlns="http://www.w3.org/2000/svg" 
-                      width="24" 
-                      height="24" 
-                      fill={featuredArticleLiked ? 'currentColor' : 'none'} 
-                      viewBox="0 0 24 24" 
-                      stroke="currentColor" 
-                      className={`${featuredArticleLiked ? 'text-red-500' : 'text-gray-700'}`}
+                  {/* Action buttons on the top right */}
+                  <div className="absolute top-4 right-4 z-20 flex flex-col space-y-2">
+                    <button 
+                      onClick={handleFeaturedLike}
+                      className={`p-2 rounded-full bg-white bg-opacity-80 shadow-md transition ${isLikingFeatured ? 'cursor-wait' : 'cursor-pointer hover:bg-opacity-100'}`}
+                      disabled={isLikingFeatured}
+                      aria-label={featuredArticleLiked ? "Unlike" : "Like"}
                     >
-                      <path 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round" 
-                        strokeWidth={featuredArticleLiked ? 0 : 2} 
-                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
-                      />
-                    </svg>
-                  </button>
+                      <svg 
+                        xmlns="http://www.w3.org/2000/svg" 
+                        width="24" 
+                        height="24" 
+                        fill={featuredArticleLiked ? 'currentColor' : 'none'} 
+                        viewBox="0 0 24 24" 
+                        stroke="currentColor" 
+                        className={`${featuredArticleLiked ? 'text-red-500' : 'text-gray-700'}`}
+                      >
+                        <path 
+                          strokeLinecap="round" 
+                          strokeLinejoin="round" 
+                          strokeWidth={featuredArticleLiked ? 0 : 2} 
+                          d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+                        />
+                      </svg>
+                    </button>
+                    
+                    {isUserAdmin && (
+                      <button 
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDeleteClick(e);
+                        }}
+                        className="p-2 rounded-full bg-white bg-opacity-80 shadow-md transition hover:bg-opacity-100"
+                        aria-label="Delete"
+                      >
+                        <svg 
+                          xmlns="http://www.w3.org/2000/svg" 
+                          width="24" 
+                          height="24" 
+                          fill="none" 
+                          viewBox="0 0 24 24" 
+                          stroke="currentColor" 
+                          className="text-red-600"
+                        >
+                          <path 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round" 
+                            strokeWidth={2} 
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" 
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                   
                   {/* Image Container with Fixed Height */}
                   <div className="relative w-full h-96">
@@ -882,12 +993,37 @@ const QueryModal = () => {
                   
                   {/* Read Full Article Button */}
                   <a 
-  href={`/article/${filteredNews[0]._id || filteredNews[0].id}`}
-  className="mt-4 block bg-gray-900 text-white px-4 py-2 text-center hover:bg-gray-800 transition"
->
+                    href={`/article/${filteredNews[0]._id || filteredNews[0].id}`}
+                    className="mt-4 block bg-gray-900 text-white px-4 py-2 text-center hover:bg-gray-800 transition"
+                  >
                     Read Article
                   </a>
                 </div>
+                
+                {/* Delete confirmation dialog moved outside the article container but inside the parent div */}
+                {showDeleteConfirm && filteredNews[0] && (
+                  <div className="fixed inset-0 flex items-center justify-center backdrop-blur-sm bg-black/30 z-50" onClick={(e) => handleCancelDelete(e)}>
+                    <div className="bg-white p-6 rounded-lg shadow-xl max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+                      <h3 className="text-xl font-bold mb-4">Delete Article</h3>
+                      <p className="mb-6">Are you sure you want to delete "{filteredNews[0].title}"? This action cannot be undone.</p>
+                      <div className="flex justify-end space-x-3">
+                        <button 
+                          className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                          onClick={(e) => handleCancelDelete(e)}
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          className={`px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 ${isDeleting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          onClick={(e) => handleConfirmDelete(e)}
+                          disabled={isDeleting}
+                        >
+                          {isDeleting ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
