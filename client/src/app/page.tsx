@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { getArticles, generateArticles, getPersonalizedArticles, getUserLikedArticles, getUserId, isAuthenticated, likeArticle, getUserLikes } from '@/lib/api';
+import { getArticles, generateArticles, getPersonalizedArticles, getUserLikedArticles, getUserId, isAuthenticated, getUserLikes, toggleArticleLike } from '@/lib/api';
 import { Article } from '@/lib/types';
 import ArticleCard from '@/components/ArticleCard';
 import Image from 'next/image';
@@ -111,6 +111,30 @@ function HomeContent() {
     }
   }, [selectedCategory]);
   
+  // Add a listener for the custom likeUpdate event
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    const handleCustomLikeUpdate = (e: Event) => {
+      // Only refresh if we're in the personalized feed section
+      if (selectedCategory === "For You") {
+        // Debounce the refresh to avoid multiple rapid updates
+        if ((window as any).likeUpdateCustomTimer) {
+          clearTimeout((window as any).likeUpdateCustomTimer);
+        }
+        (window as any).likeUpdateCustomTimer = setTimeout(() => {
+          setLikeUpdateTrigger(prev => prev + 1);
+        }, 300);
+      }
+    };
+    
+    window.addEventListener('likeUpdate', handleCustomLikeUpdate);
+    
+    return () => {
+      window.removeEventListener('likeUpdate', handleCustomLikeUpdate);
+    };
+  }, [selectedCategory]);
+
   // Set up an interval to check for local like changes (within same tab)
   useEffect(() => {
     if (typeof window === 'undefined' || selectedCategory !== "For You") return;
@@ -122,10 +146,16 @@ function HomeContent() {
       if (prevLikedArticles !== currentLikedArticles) {
         prevLikedArticles = currentLikedArticles;
         if (isAuthenticated()) {
-          setLikeUpdateTrigger(prev => prev + 1);
+          // Add debouncing to reduce rapid consecutive refreshes
+          if ((window as any).likeUpdateTimer) {
+            clearTimeout((window as any).likeUpdateTimer);
+          }
+          (window as any).likeUpdateTimer = setTimeout(() => {
+            setLikeUpdateTrigger(prev => prev + 1);
+          }, 300);
         }
       }
-    }, 2000); // Check every 2 seconds
+    }, 3000); // Increase from 2000ms to 3000ms
     
     return () => clearInterval(checkLikeChanges);
   }, [selectedCategory]);
@@ -480,12 +510,6 @@ const QueryModal = () => {
       return;
     }
     
-    const userId = getUserId();
-    if (!userId) {
-      alert('User ID not found. Please log in again.');
-      return;
-    }
-    
     // Use the filtered article when available (for search results), otherwise use the main news array
     const featuredArticle = filteredNews?.[0] || news?.[0];
     
@@ -507,45 +531,29 @@ const QueryModal = () => {
     try {
       setIsLikingFeatured(true);
       console.log('Attempting to like featured article with ID:', articleId);
-      await likeArticle(userId, articleId);
       
-      // Toggle like state
-      const newLikedState = !featuredArticleLiked;
-      setFeaturedArticleLiked(newLikedState);
-      
-      // Update local storage
-      const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
-      if (newLikedState) {
-        if (!likedArticles.includes(articleId)) {
-          likedArticles.push(articleId);
-        }
-      } else {
-        const index = likedArticles.indexOf(articleId);
-        if (index > -1) {
-          likedArticles.splice(index, 1);
-        }
-      }
-      localStorage.setItem('likedArticles', JSON.stringify(likedArticles));
-      
-      // Always trigger a refresh of the personalized feed when likes change,
-      // regardless of current category or search state
-      setLikeUpdateTrigger(prev => prev + 1);
+      // Use the centralized helper function
+      const result = await toggleArticleLike(articleId);
+      setFeaturedArticleLiked(result.isLiked);
       
       // Special case for search results - if the search and like happens while
-      // in "For You" category with "Liked" tab, immediately refresh the content
+      // in "For You" category with "Liked" tab
       if (selectedCategory === "For You" && showLikedArticles) {
-        const fetchLikedAgain = async () => {
+        // Debounce the refresh
+        setTimeout(async () => {
           try {
-            const refreshedResponse = await getUserLikedArticles(userId);
-            if (refreshedResponse.articles) {
-              setNews(refreshedResponse.articles);
-              setFilteredNews(refreshedResponse.articles);
+            const userId = getUserId();
+            if (userId) {
+              const refreshedResponse = await getUserLikedArticles(userId);
+              if (refreshedResponse.articles) {
+                setNews(refreshedResponse.articles);
+                setFilteredNews(refreshedResponse.articles);
+              }
             }
           } catch (error) {
             console.error('Error refreshing liked articles:', error);
           }
-        };
-        fetchLikedAgain();
+        }, 300);
       }
     } catch (error) {
       console.error('Error liking featured article:', error);
