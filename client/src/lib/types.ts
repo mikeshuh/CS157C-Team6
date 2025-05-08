@@ -42,6 +42,8 @@ export interface User {
 export interface LoginResponse {
   access_token: string;
   user_id?: string; // Added to match the updated backend response
+  user_role?: string; // User role (admin or user)
+  likes?: string[];
 }
 
 export interface LikeResponse {

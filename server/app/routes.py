@@ -9,7 +9,7 @@ from app.services.utils import *
 from app.services.scraper import scrape_article
 from pymongo import UpdateOne
 from app.bcrypt import bcrypt, jwt
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 import time
 from bson import ObjectId
 import json
@@ -457,16 +457,15 @@ def login():
         if not user or not bcrypt.check_password_hash(user["password"], password):
             return jsonify({"error": "Invalid username or password"}), 401
         
-        # Create JWT token with user identity and additional claims
+        # Create user info for JWT claim - avoid complex objects
+        user_id = str(user['_id'])
         user_claims = {
+            'id': user_id,
             'username': user['username'],
             'role': user.get('role', 'user')
         }
         
-        # Add email to claims if it exists
-        if 'email' in user:
-            user_claims['email'] = user['email']
-        
+        # Create JWT token with user claims
         access_token = create_access_token(identity=user_claims)
         
         # Get user likes and convert ObjectIds to strings if needed
@@ -478,10 +477,11 @@ def login():
             user_likes = [str(like_id) for like_id in user_likes]
             print(f"First few likes: {user_likes[:3]}")
         
-        # Return the user's MongoDB ID along with the token
+        # Return the user's MongoDB ID, role, and token
         return jsonify({
             'access_token': access_token,
-            'user_id': str(user['_id']),
+            'user_id': user_id,
+            'user_role': user.get('role', 'user'),
             'likes': user_likes
         }), 200
     
@@ -713,3 +713,92 @@ def generate_articles():
             "success" : False,
             "error": str(e),
         })
+
+@main.route('/api/delete_article/<article_id>', methods=['DELETE'])
+@jwt_required()
+def delete_article(article_id):
+    '''
+    Delete a single article by ID
+    Required: User must be logged in with admin role
+    '''
+    # Get the current user identity from JWT
+    try:
+        current_user = get_jwt_identity()
+        print(f"JWT Identity received: {current_user}")
+        
+        # Check if we have valid user data
+        if not current_user:
+            print("No user identity found in token")
+            return jsonify({"success": False, "error": "Authentication required"}), 401
+        
+        # Extract role - handle both dict and string formats
+        user_role = None
+        if isinstance(current_user, dict):
+            user_role = current_user.get('role')
+            username = current_user.get('username', 'unknown')
+        elif isinstance(current_user, str):
+            # Try to handle string format (fallback)
+            print(f"Identity is a string: {current_user}")
+            user_role = 'admin' if 'admin' in current_user.lower() else 'user'
+            username = current_user
+        else:
+            print(f"Unexpected identity type: {type(current_user)}")
+            username = 'unknown'
+        
+        print(f"User role extracted: {user_role}")
+        
+        # Check admin privileges 
+        if user_role != 'admin':
+            print(f"Insufficient privileges: {user_role}")
+            return jsonify({
+                "success": False, 
+                "error": "Admin privileges required for this operation"
+            }), 403
+            
+        # Convert string ID to ObjectId for MongoDB
+        try:
+            article_obj_id = ObjectId(article_id)
+        except Exception as e:
+            print(f"Invalid article ID format: {article_id}, error: {str(e)}")
+            return jsonify({
+                "success": False,
+                "error": "Invalid article ID format"
+            }), 400
+        
+        # Delete the article from MongoDB
+        result = mongo.db.articles.delete_one({"_id": article_obj_id})
+        
+        # Check if article was found and deleted
+        if result.deleted_count == 0:
+            print(f"Article not found: {article_id}")
+            return jsonify({
+                "success": False,
+                "error": "Article not found"
+            }), 404
+        
+        print(f"Article {article_id} successfully deleted by {username}")
+        return jsonify({
+            "success": True,
+            "message": f"Article with ID {article_id} deleted successfully"
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in delete_article: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": f"An error occurred: {str(e)}"
+        }), 500
+
+@main.route('/api/test_auth', methods=['GET'])
+@jwt_required()
+def test_auth():
+    '''
+    Test endpoint to verify JWT token authentication
+    '''
+    current_user = get_jwt_identity()
+    return jsonify({
+        "success": True,
+        "authenticated": True,
+        "user": current_user,
+        "message": "Authentication successful"
+    })

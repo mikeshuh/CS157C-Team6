@@ -184,27 +184,60 @@ export async function likeArticle(userId: string, articleId: string): Promise<Li
 }
 
 export async function login(username: string, password: string): Promise<LoginResponse> {
-  const response = await fetch(`${API_URL}/login`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ username, password }),
-  });
+  try {
+    const response = await fetch(`${API_URL}/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username, password }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Login failed: ${response.status}`);
+    }
 
-  const loginResponse = await response.json();
-  
-  // If login response includes likes, store them in localStorage
-  if (loginResponse.likes && Array.isArray(loginResponse.likes)) {
-    localStorage.setItem('likedArticles', JSON.stringify(loginResponse.likes));
-    console.log('Stored likes from login response:', loginResponse.likes);
+    const loginResponse = await response.json();
+    
+    console.log('Login response received:', {
+      hasToken: !!loginResponse.access_token,
+      userId: loginResponse.user_id,
+      userRole: loginResponse.user_role,
+      likesCount: loginResponse.likes?.length || 0
+    });
+    
+    // Store the access token in localStorage
+    if (loginResponse.access_token) {
+      localStorage.setItem('token', loginResponse.access_token);
+      console.log('Access token stored successfully');
+    } else {
+      console.error('No access token received from server');
+    }
+    
+    // Store user ID if available
+    if (loginResponse.user_id) {
+      localStorage.setItem('userId', loginResponse.user_id);
+      console.log('User ID stored:', loginResponse.user_id);
+    }
+    
+    // If login response includes likes, store them in localStorage
+    if (loginResponse.likes && Array.isArray(loginResponse.likes)) {
+      localStorage.setItem('likedArticles', JSON.stringify(loginResponse.likes));
+      console.log('Stored likes count:', loginResponse.likes.length);
+    }
+    
+    // Store user role directly from response
+    if (loginResponse.user_role) {
+      localStorage.setItem('userRole', loginResponse.user_role);
+      console.log('User role stored:', loginResponse.user_role);
+    } 
+    
+    return loginResponse;
+  } catch (error) {
+    console.error('Login error:', error);
+    throw error;
   }
-  
-  return loginResponse;
 }
 
 export async function register(user: User): Promise<{ msg: string }> {
@@ -292,6 +325,10 @@ export function logout(): void {
     localStorage.removeItem('token');
     localStorage.removeItem('userId');
     localStorage.removeItem('likedArticles'); // Also clear likes on logout
+    localStorage.removeItem('userRole'); // Also clear role on logout
+    
+    // Dispatch a custom event so components can react to logout
+    window.dispatchEvent(new CustomEvent('userLogout'));
   }
 }
 
@@ -343,6 +380,105 @@ export async function toggleArticleLike(articleId: string): Promise<{ success: b
     return { success: true, isLiked: newLikedState };
   } catch (error) {
     console.error('Error toggling article like:', error);
+    throw error;
+  }
+}
+
+// Add a function to check if user is an admin
+export function isAdmin(): boolean {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('userRole') === 'admin';
+  }
+  return false;
+}
+
+/**
+ * Delete an article (admin only)
+ * @param articleId The MongoDB ID of the article to delete
+ */
+export async function deleteArticle(articleId: string): Promise<{ success: boolean, message: string }> {
+  try {
+    // Get the authentication token
+    const token = getToken();
+    if (!token) {
+      throw new Error('Authentication required. Please log in again.');
+    }
+    
+    console.log('Attempting to delete article:', articleId);
+    console.log('Token available:', !!token);
+    
+    // Make the request with proper authorization header
+    const response = await fetch(`${API_URL}/api/delete_article/${articleId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+    });
+    
+    // Log response status for debugging
+    console.log('Delete response status:', response.status);
+    
+    // Get response data (even for error responses)
+    let data;
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      data = await response.json();
+      console.log('Delete response data:', data);
+    } else {
+      const text = await response.text();
+      console.log('Delete response text:', text);
+      data = { success: false, message: text };
+    }
+    
+    // Handle errors
+    if (!response.ok) {
+      if (response.status === 401) {
+        // Clear token on auth failure
+        localStorage.removeItem('token');
+        throw new Error(data.error || 'Your session has expired. Please log in again.');
+      } else if (response.status === 403) {
+        throw new Error(data.error || 'You do not have permission to delete articles.');
+      } else {
+        throw new Error(data.error || `Failed to delete article: ${response.status}`);
+      }
+    }
+    
+    return data;
+  } catch (error: any) {
+    console.error('Error in deleteArticle:', error);
+    throw error;
+  }
+}
+
+/**
+ * Test function to verify JWT token authentication
+ */
+export async function testAuthentication(): Promise<{ success: boolean, user: any, message: string }> {
+  try {
+    const token = getToken();
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    const response = await fetch(`${API_URL}/api/test_auth`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      }
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Auth test failed:', response.status, errorData);
+      throw new Error(errorData.error || `Authentication test failed: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Authentication test error:', error);
     throw error;
   }
 }
