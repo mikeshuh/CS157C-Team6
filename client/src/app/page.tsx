@@ -239,7 +239,7 @@ function HomeContent() {
                 } else if (response.articles?.length) {
                   // We have articles but no preferred tags - use a generic personalization message
                   setPersonalizationMessage(
-                    'Articles personalized based on your reading history'
+                    'Like articles to personalize your feed'
                   );
                   console.log('No preferred tags but articles found');
                 } else {

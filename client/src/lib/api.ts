@@ -219,12 +219,22 @@ export async function login(username: string, password: string): Promise<LoginRe
     if (loginResponse.user_id) {
       localStorage.setItem('userId', loginResponse.user_id);
       console.log('User ID stored:', loginResponse.user_id);
+      
+      // Record the fact that we've fetched likes from login to prevent duplicate requests
+      if (typeof window !== 'undefined') {
+        (window as any)._likesInitiallyFetched = true;
+      }
     }
     
     // If login response includes likes, store them in localStorage
     if (loginResponse.likes && Array.isArray(loginResponse.likes)) {
       localStorage.setItem('likedArticles', JSON.stringify(loginResponse.likes));
       console.log('Stored likes count:', loginResponse.likes.length);
+      
+      // Also update the last fetch time to prevent immediate refetching after login
+      if (loginResponse.user_id) {
+        lastLikesFetchTime[loginResponse.user_id] = Date.now();
+      }
     }
     
     // Store user role directly from response
@@ -291,11 +301,28 @@ export function getUserId(): string | null {
   return null;
 }
 
+// Track the last time we fetched user likes
+let lastLikesFetchTime: Record<string, number> = {};
+const LIKES_FETCH_COOLDOWN = 5000; // 5 seconds cooldown between fetches
+
 /**
  * Fetch a user's likes from the server
  */
 export async function getUserLikes(userId: string): Promise<string[]> {
   try {
+    // Return from localStorage if we recently fetched for this user
+    const now = Date.now();
+    const lastFetch = lastLikesFetchTime[userId] || 0;
+    
+    if (now - lastFetch < LIKES_FETCH_COOLDOWN) {
+      console.log('Using cached likes - too soon to fetch again');
+      const currentLikes = localStorage.getItem('likedArticles');
+      return currentLikes ? JSON.parse(currentLikes) : [];
+    }
+    
+    // Update the last fetch time before making the request
+    lastLikesFetchTime[userId] = now;
+    
     const response = await fetch(`${API_URL}/api/user/likes/${userId}`);
     
     if (!response.ok) {
@@ -479,6 +506,44 @@ export async function testAuthentication(): Promise<{ success: boolean, user: an
     return await response.json();
   } catch (error) {
     console.error('Authentication test error:', error);
+    throw error;
+  }
+}
+
+export async function updateArticle(articleId: string, data: { summary?: string, key_points?: string[] }): Promise<{ success: boolean, message: string, article?: Article }> {
+  try {
+    // Validate inputs
+    if (!articleId) {
+      throw new Error('Missing article ID');
+    }
+    
+    if (!data.summary && !data.key_points) {
+      throw new Error('No update data provided');
+    }
+    
+    const token = getToken();
+    if (!token) {
+      throw new Error('Authentication required');
+    }
+    
+    const response = await fetch(`${API_URL}/api/update_article/${articleId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(data),
+    });
+    
+    const responseData = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(responseData.error || `Failed to update article: ${response.status}`);
+    }
+    
+    return responseData;
+  } catch (error: any) {
+    console.error('Error updating article:', error);
     throw error;
   }
 }
