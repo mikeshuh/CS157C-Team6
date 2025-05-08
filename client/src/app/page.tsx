@@ -40,9 +40,11 @@ function NewsLoading() {
 function HomeContent() {
   const searchParams = useSearchParams();
   const categoryParam = searchParams?.get('category');
+  const searchQuery = searchParams?.get('search') || '';
   
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [news, setNews] = useState<Article[]>([]);
+  const [filteredNews, setFilteredNews] = useState<Article[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState("");
@@ -95,6 +97,61 @@ function HomeContent() {
 
     fetchNews();
   }, [selectedCategory]);
+
+  // Filter articles based on search query
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredNews(news);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const filtered = news.filter(article => {
+      const title = article.title?.toLowerCase() || '';
+      const category = article.summarization?.tags?.join(' ').toLowerCase() || '';
+      const author = article.author?.toLowerCase() || '';
+      
+      // Improved date search - handle multiple date formats
+      let dateMatches = false;
+      if (article.published_date) {
+        // Original date string
+        const originalDate = article.published_date.toLowerCase();
+        
+        // Convert to Date object for formatted versions
+        const dateObj = new Date(article.published_date);
+        
+        // Various date formats
+        const formats = [
+          originalDate,
+          dateObj.toLocaleDateString('en-US'), // MM/DD/YYYY
+          dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), // MMM DD, YYYY
+          dateObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), // Month DD, YYYY
+          dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }), // Day, Month DD, YYYY
+          dateObj.toLocaleDateString('en-GB'), // DD/MM/YYYY
+          dateObj.getFullYear().toString(), // YYYY (just the year)
+          dateObj.toLocaleString('en-US', { month: 'short' }).toLowerCase(), // MMM (just the month name)
+          dateObj.toLocaleString('en-US', { month: 'long' }).toLowerCase(), // Month (full month name)
+        ];
+        
+        // Check if query matches any of the date formats
+        dateMatches = formats.some(format => format.toLowerCase().includes(query));
+      }
+      
+      const summary = article.summarization?.summary?.toLowerCase() || '';
+      const keyPoints = article.summarization?.key_points?.join(' ').toLowerCase() || '';
+      
+      return (
+        title.includes(query) ||
+        category.includes(query) ||
+        author.includes(query) ||
+        dateMatches ||
+        summary.includes(query) ||
+        keyPoints.includes(query)
+      );
+    });
+
+    setFilteredNews(filtered);
+  }, [news, searchQuery]);
 
 const handleGenerateArticles = async () => {
   openModal();
@@ -299,7 +356,16 @@ const QueryModal = () => {
             {CATEGORIES.map((category) => (
               <button
                 key={category}
-                onClick={() => setSelectedCategory(category)}
+                onClick={() => {
+                  // Preserve the search query when changing categories
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('category', category);
+                  if (searchQuery) {
+                    url.searchParams.set('search', searchQuery);
+                  }
+                  window.history.pushState({}, '', url);
+                  setSelectedCategory(category);
+                }}
                 className={`px-4 py-1 font-serif whitespace-nowrap font-medium transition
                   ${selectedCategory === category 
                     ? 'bg-gray-900 text-white' 
@@ -312,6 +378,29 @@ const QueryModal = () => {
           </div>
         </div>
       </section>
+
+      {/* Search Query Indicator */}
+      {searchQuery && (
+        <div className="bg-gray-50 py-3 border-b border-gray-200">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                Search results for: <span className="font-medium">{searchQuery}</span>
+              </div>
+              <button 
+                onClick={() => {
+                  const url = new URL(window.location.href);
+                  url.searchParams.delete('search');
+                  window.location.href = url.toString();
+                }}
+                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+              >
+                Clear Search
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="container mx-auto px-4 mb-12 mt-6">
@@ -329,16 +418,35 @@ const QueryModal = () => {
               Try Again
             </button>
           </div>
-        ) : news.length === 0 ? (
+        ) : filteredNews.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-gray-600 mb-4">No articles found for this category.</p>
-            <p className="text-sm text-gray-500 mb-6">Try selecting a different category or generate new articles.</p>
-            <button 
-              onClick={handleGenerateArticles}
-              className="bg-gray-900 text-white px-4 py-2 rounded font-serif hover:bg-gray-800 transition"
-            >
-              Generate Articles
-            </button>
+            {searchQuery ? (
+              <>
+                <p className="text-gray-600 mb-4">No articles match your search for "{searchQuery}".</p>
+                <p className="text-sm text-gray-500 mb-6">Try a different search term or category.</p>
+                <button 
+                  onClick={() => {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('search');
+                    window.location.href = url.toString();
+                  }}
+                  className="bg-gray-900 text-white px-4 py-2 rounded font-serif hover:bg-gray-800 transition"
+                >
+                  Clear Search
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-600 mb-4">No articles found for this category.</p>
+                <p className="text-sm text-gray-500 mb-6">Try selecting a different category or generate new articles.</p>
+                <button 
+                  onClick={handleGenerateArticles}
+                  className="bg-gray-900 text-white px-4 py-2 rounded font-serif hover:bg-gray-800 transition"
+                >
+                  Generate Articles
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <>
@@ -352,21 +460,21 @@ const QueryModal = () => {
             )}
 
             {/* Featured Article - With Image */}
-            {news[0] && (
+            {filteredNews[0] && (
               <div className="mb-8 border-b border-gray-200 pb-8">
                 <div className="featured-article relative rounded overflow-hidden">
                   {/* Category Tag */}
                   <div className="absolute top-0 left-0 z-10">
                     <div className="bg-blue-600 text-white px-3 py-1 text-sm font-bold">
-                      {formatFeaturedArticle(news[0])?.category}
+                      {formatFeaturedArticle(filteredNews[0])?.category}
                     </div>
                   </div>
                   
                   {/* Image Container with Fixed Height */}
                   <div className="relative w-full h-96">
                     <Image 
-                      src={news[0].img || "/api/placeholder/800/400"}
-                      alt={news[0].title}
+                      src={filteredNews[0].img || "/api/placeholder/800/400"}
+                      alt={filteredNews[0].title}
                       fill
                       className="object-cover"
                     />
@@ -377,23 +485,23 @@ const QueryModal = () => {
                     {/* Text Container - Positioned at Bottom */}
                     <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 text-white">
                       <h2 className="text-2xl md:text-3xl font-serif font-bold mb-3">
-                        {formatFeaturedArticle(news[0])?.title}
+                        {formatFeaturedArticle(filteredNews[0])?.title}
                       </h2>
                       
                       <p className="text-white text-opacity-90 mb-4 text-sm md:text-base">
-                        {formatFeaturedArticle(news[0])?.summary}
+                        {formatFeaturedArticle(filteredNews[0])?.summary}
                       </p>
                       
                       <div className="flex justify-between items-center text-white text-opacity-80 text-xs md:text-sm">
-                        <span>{formatFeaturedArticle(news[0])?.source}</span>
-                        <span>{formatFeaturedArticle(news[0])?.date}</span>
+                        <span>{formatFeaturedArticle(filteredNews[0])?.source}</span>
+                        <span>{formatFeaturedArticle(filteredNews[0])?.date}</span>
                       </div>
                     </div>
                   </div>
                   
                   {/* Read Full Article Button */}
                   <a 
-                    href={`/article/${news[0].id}`}
+                    href={`/article/${filteredNews[0].id}`}
                     className="mt-4 block bg-gray-900 text-white px-4 py-2 text-center hover:bg-gray-800 transition"
                   >
                     Read Article
@@ -404,7 +512,7 @@ const QueryModal = () => {
 
             {/* News Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {news.slice(1).map((article) => (
+              {filteredNews.slice(1).map((article) => (
                 <ArticleCard key={article.id} article={article} />
               ))}
             </div>
