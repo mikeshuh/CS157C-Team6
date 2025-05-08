@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { getArticles, getUserId, isAuthenticated, getUserLikes, toggleArticleLike, isAdmin, deleteArticle } from '@/lib/api';
+import { getArticles, getUserId, isAuthenticated, getUserLikes, toggleArticleLike, isAdmin, deleteArticle, updateArticle } from '@/lib/api';
 import { Article } from '@/lib/types';
 
 export default function ArticlePage() {
@@ -21,6 +21,10 @@ export default function ArticlePage() {
   const [isUserAdmin, setIsUserAdmin] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedSummary, setEditedSummary] = useState('');
+  const [editedKeyPoints, setEditedKeyPoints] = useState<string[]>([]);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     const fetchArticle = async () => {
@@ -78,17 +82,21 @@ export default function ArticlePage() {
         return;
       }
       
-      // Start with cached likes if available
+      // Start with cached likes from localStorage - this is sufficient in most cases
       const cachedLikes = JSON.parse(localStorage.getItem('likedArticles') || '[]');
       const articleId = article._id || article.id;
       setIsLiked(articleId ? cachedLikes.includes(articleId) : false);
       
-      // Then fetch from server to ensure we have the latest data
+      // Only fetch from server on initial load, not on every re-render
+      // Using a ref to track if we've already fetched to avoid repeated calls
       const userId = getUserId();
-      if (userId) {
+      if (userId && !window.hasOwnProperty('_likesInitiallyFetched')) {
         try {
+          // Mark that we've fetched likes at least once in this session
+          (window as any)._likesInitiallyFetched = true;
+          
           const likes = await getUserLikes(userId);
-          localStorage.setItem('likedArticles', JSON.stringify(likes));
+          // The getUserLikes function now has its own debounce mechanism
           setIsLiked(articleId ? likes.includes(articleId) : false);
         } catch (error) {
           console.error('Error fetching likes:', error);
@@ -99,6 +107,14 @@ export default function ArticlePage() {
     
     checkIfLiked();
   }, [article, userAuthenticated]);
+
+  // Initialize edit form when entering edit mode
+  useEffect(() => {
+    if (isEditing && article) {
+      setEditedSummary(article.summarization?.summary || '');
+      setEditedKeyPoints(article.summarization?.key_points || []);
+    }
+  }, [isEditing, article]);
 
   const handleLike = async () => {
     if (!userAuthenticated) {
@@ -159,6 +175,70 @@ export default function ArticlePage() {
     } finally {
       setIsDeleting(false);
       setShowDeleteConfirm(false);
+    }
+  };
+
+  // Enter edit mode
+  const handleEditClick = () => {
+    setIsEditing(true);
+  };
+
+  // Cancel editing and discard changes
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditedSummary(article?.summarization?.summary || '');
+    setEditedKeyPoints(article?.summarization?.key_points || []);
+  };
+
+  // Add a new key point when editing
+  const handleAddKeyPoint = () => {
+    setEditedKeyPoints([...editedKeyPoints, '']);
+  };
+
+  // Update a specific key point in the array
+  const handleKeyPointChange = (index: number, value: string) => {
+    const newKeyPoints = [...editedKeyPoints];
+    newKeyPoints[index] = value;
+    setEditedKeyPoints(newKeyPoints);
+  };
+
+  // Remove a key point
+  const handleRemoveKeyPoint = (index: number) => {
+    setEditedKeyPoints(editedKeyPoints.filter((_, i) => i !== index));
+  };
+
+  // Save changes to the article
+  const handleSaveEdit = async () => {
+    if (!article) return;
+    
+    const articleId = article._id || article.id;
+    if (!articleId) {
+      console.error('Missing article ID for update operation');
+      return;
+    }
+    
+    // Remove any empty key points
+    const filteredKeyPoints = editedKeyPoints.filter(point => point.trim() !== '');
+    
+    try {
+      setIsUpdating(true);
+      const result = await updateArticle(articleId, {
+        summary: editedSummary,
+        key_points: filteredKeyPoints
+      });
+      
+      if (result.success && result.article) {
+        // Update the article in the component state
+        setArticle(result.article);
+        setIsEditing(false);
+      } else {
+        alert('Failed to update article: ' + result.message);
+      }
+    } catch (error: any) {
+      console.error('Error updating article:', error);
+      alert('Failed to update article: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -236,6 +316,25 @@ export default function ArticlePage() {
             </Link>
           </div>
           <h1 className="text-3xl md:text-4xl font-serif font-bold text-gray-900 mb-4">{article.title}</h1>
+          
+          {/* Article Tags */}
+          {article.summarization?.tags && article.summarization.tags.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              {article.summarization.tags.map((tag, index) => {
+                // Capitalize first letter of the tag
+                const formattedTag = tag.charAt(0).toUpperCase() + tag.slice(1).toLowerCase();
+                return (
+                  <span 
+                    key={index} 
+                    className="inline-block bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded-full text-sm font-medium transition-colors"
+                  >
+                    #{formattedTag}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          
           <div className="flex justify-between items-center text-gray-600 text-sm">
             <div className="flex items-center">
               <span className="mr-4">{getSourceFromArticle(article)}</span>
@@ -267,27 +366,52 @@ export default function ArticlePage() {
               </button>
               
               {isUserAdmin && (
-                <button 
-                  onClick={handleDeleteClick}
-                  className="flex items-center gap-1 text-red-600 hover:text-red-800"
-                >
-                  <svg 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    width="20" 
-                    height="20" 
-                    fill="none" 
-                    viewBox="0 0 24 24" 
-                    stroke="currentColor"
+                <>
+                  <button 
+                    onClick={handleEditClick}
+                    className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                    disabled={isEditing}
                   >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      strokeWidth={2} 
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" 
-                    />
-                  </svg>
-                  <span className="text-sm">Delete</span>
-                </button>
+                    <svg 
+                      xmlns="http://www.w3.org/2000/svg" 
+                      width="20" 
+                      height="20" 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor"
+                    >
+                      <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        strokeWidth={2} 
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" 
+                      />
+                    </svg>
+                    <span className="text-sm">Edit</span>
+                  </button>
+
+                  <button 
+                    onClick={handleDeleteClick}
+                    className="flex items-center gap-1 text-red-600 hover:text-red-800"
+                  >
+                    <svg 
+                      xmlns="http://www.w3.org/2000/svg" 
+                      width="20" 
+                      height="20" 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor"
+                    >
+                      <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        strokeWidth={2} 
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" 
+                      />
+                    </svg>
+                    <span className="text-sm">Delete</span>
+                  </button>
+                </>
               )}
               
               <Link 
@@ -320,18 +444,82 @@ export default function ArticlePage() {
             {/* Summary */}
             <div className="mb-6">
               <h2 className="text-2xl font-serif font-bold mb-4">Summary</h2>
-              <p className="text-gray-800 leading-relaxed">{article.summarization?.summary}</p>
+              {isEditing ? (
+                <textarea
+                  value={editedSummary}
+                  onChange={e => setEditedSummary(e.target.value)}
+                  rows={5}
+                  className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter article summary..."
+                />
+              ) : (
+                <p className="text-gray-800 leading-relaxed">{article.summarization?.summary}</p>
+              )}
             </div>
             
             {/* Key Points */}
             <div className="mb-6">
               <h2 className="text-2xl font-serif font-bold mb-4">Key Points</h2>
-              <ul className="list-disc pl-5 space-y-2">
-                {article.summarization?.key_points.map((point, index) => (
-                  <li key={index} className="text-gray-800">{point}</li>
-                ))}
-              </ul>
+              {isEditing ? (
+                <div className="space-y-3">
+                  {editedKeyPoints.map((point, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={point}
+                        onChange={e => handleKeyPointChange(index, e.target.value)}
+                        className="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Enter key point..."
+                      />
+                      <button
+                        onClick={() => handleRemoveKeyPoint(index)}
+                        className="p-2 text-red-500 hover:text-red-700"
+                        title="Remove point"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={handleAddKeyPoint}
+                    className="flex items-center gap-1 text-blue-600 hover:text-blue-800 mt-2"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    <span>Add Key Point</span>
+                  </button>
+                </div>
+              ) : (
+                <ul className="list-disc pl-5 space-y-2">
+                  {article.summarization?.key_points.map((point, index) => (
+                    <li key={index} className="text-gray-800">{point}</li>
+                  ))}
+                </ul>
+              )}
             </div>
+
+            {/* Edit Action Buttons */}
+            {isEditing && (
+              <div className="flex justify-end gap-3 mb-6">
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                  disabled={isUpdating}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  className={`px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 ${isUpdating ? 'opacity-50 cursor-wait' : ''}`}
+                  disabled={isUpdating}
+                >
+                  {isUpdating ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            )}
 
             {/* Call to Action */}
             <div className="mt-8 pt-6 border-t border-gray-200">
