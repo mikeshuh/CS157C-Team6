@@ -111,30 +111,48 @@ function HomeContent() {
       const category = article.summarization?.tags?.join(' ').toLowerCase() || '';
       const author = article.author?.toLowerCase() || '';
       
-      // Improved date search - handle multiple date formats
+      // Enhanced date search that's searchable but avoids hydration issues
       let dateMatches = false;
       if (article.published_date) {
-        // Original date string
-        const originalDate = article.published_date.toLowerCase();
-        
-        // Convert to Date object for formatted versions
-        const dateObj = new Date(article.published_date);
-        
-        // Various date formats
-        const formats = [
-          originalDate,
-          dateObj.toLocaleDateString('en-US'), // MM/DD/YYYY
-          dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), // MMM DD, YYYY
-          dateObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), // Month DD, YYYY
-          dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }), // Day, Month DD, YYYY
-          dateObj.toLocaleDateString('en-GB'), // DD/MM/YYYY
-          dateObj.getFullYear().toString(), // YYYY (just the year)
-          dateObj.toLocaleString('en-US', { month: 'short' }).toLowerCase(), // MMM (just the month name)
-          dateObj.toLocaleString('en-US', { month: 'long' }).toLowerCase(), // Month (full month name)
-        ];
-        
-        // Check if query matches any of the date formats
-        dateMatches = formats.some(format => format.toLowerCase().includes(query));
+        try {
+          // Original date string - for direct matching
+          const originalDateStr = article.published_date.toLowerCase();
+          
+          // Parse the date
+          const dateObj = new Date(article.published_date);
+          
+          // Get year, month, day as strings
+          const year = dateObj.getFullYear().toString();
+          const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 
+                             'july', 'august', 'september', 'october', 'november', 'december'];
+          const monthIndex = dateObj.getMonth();
+          const monthLong = monthNames[monthIndex];
+          const monthShort = monthLong.substring(0, 3);
+          const monthNumber = (monthIndex + 1).toString().padStart(2, '0');
+          const day = dateObj.getDate().toString().padStart(2, '0');
+          
+          // Create searchable components without using locale-dependent methods
+          const searchableParts = [
+            originalDateStr,
+            year,
+            monthLong, 
+            monthShort,
+            monthNumber,
+            day,
+            `${year}-${monthNumber}`,
+            `${year}-${monthNumber}-${day}`,
+            `${monthLong} ${day}`,
+            `${monthLong} ${year}`,
+            `${monthLong} ${day}, ${year}`,
+            `${day} ${monthLong} ${year}`
+          ];
+          
+          // Check if query matches any of the date parts
+          dateMatches = searchableParts.some(part => part.includes(query));
+        } catch (e) {
+          // Fallback - try to match the original string directly
+          dateMatches = article.published_date.toLowerCase().includes(query);
+        }
       }
       
       const summary = article.summarization?.summary?.toLowerCase() || '';
@@ -258,7 +276,9 @@ const QueryModal = () => {
                       className="p-4 mb-3 border border-gray-200 rounded shadow-sm bg-white hover:border-gray-300 transition"
                     >
                       <p className="font-serif font-medium text-gray-800">{article.title}</p>
-                      <p className="text-gray-500 text-xs mt-1">ID: {article.id}</p>
+                      <p className="text-gray-500 text-xs mt-1">
+                        {article.id && <span>ID: {article.id}</span>}
+                      </p>
                     </div>
                   ))}
                 </>
@@ -292,15 +312,24 @@ const QueryModal = () => {
       return article.summarization.tags[0] || 'General';
     };
     
-    // Format date
+    // Format date - Using a format that avoids hydration issues
     const formatDate = () => {
-      const date = new Date(article.published_date);
-      return date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
+      try {
+        const dateObj = new Date(article.published_date);
+        
+        // Get date components without using locale-specific methods
+        const year = dateObj.getFullYear();
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const month = monthNames[dateObj.getMonth()];
+        const day = dateObj.getDate();
+        
+        // Format a consistent date string without locale-specific methods
+        return `${month} ${day}, ${year}`;
+      } catch (e) {
+        // Return the original date string if there's an error
+        return article.published_date || 'Unknown date';
+      }
     };
     
     // Get author/source
