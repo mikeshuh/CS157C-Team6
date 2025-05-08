@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Article } from '@/lib/types';
+import { likeArticle, getUserId, isAuthenticated, getUserLikes } from '@/lib/api';
 
 interface ArticleCardProps {
   article: Article;
@@ -9,6 +10,100 @@ interface ArticleCardProps {
 }
 
 export default function ArticleCard({ article, featured = false }: ArticleCardProps) {
+  const [isLiked, setIsLiked] = useState(false);
+  const [isLiking, setIsLiking] = useState(false);
+  const [userAuthenticated, setUserAuthenticated] = useState(false);
+  
+  // Ensure we have a proper article._id - MongoDB might return it in different formats
+  // In some cases, it might be in article._id or it might be in article.id
+  const articleId = article?._id || article?.id;
+
+  useEffect(() => {
+    // Check if user is authenticated
+    const authenticated = isAuthenticated();
+    setUserAuthenticated(authenticated);
+    
+    const checkIfLiked = async () => {
+      // Skip like checks if user is not authenticated
+      if (!userAuthenticated) {
+        setIsLiked(false);
+        return;
+      }
+      
+      // Start with cached likes if available
+      const cachedLikes = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+      setIsLiked(articleId ? cachedLikes.includes(articleId) : false);
+      
+      // Then fetch from server to ensure we have the latest data
+      const userId = getUserId();
+      if (userId) {
+        try {
+          const likes = await getUserLikes(userId);
+          localStorage.setItem('likedArticles', JSON.stringify(likes));
+          setIsLiked(articleId ? likes.includes(articleId) : false);
+        } catch (error) {
+          console.error('Error fetching likes:', error);
+          // Continue with cached likes if server fetch fails
+        }
+      }
+    };
+    
+    checkIfLiked();
+  }, [articleId, userAuthenticated]);
+
+  const handleLike = async (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent navigation to article page
+    e.stopPropagation(); // Prevent event bubbling
+    
+    if (!userAuthenticated) {
+      alert('Please log in to like articles');
+      return;
+    }
+    
+    const userId = getUserId();
+    if (!userId) {
+      alert('User ID not found. Please log in again.');
+      return;
+    }
+    
+    try {
+      setIsLiking(true);
+      
+      // Make sure we have a valid article ID before sending the request
+      if (!articleId) {
+        console.error('Missing article ID for like operation:', article);
+        alert('Please try again. Could not process this article.');
+        setIsLiking(false);
+        return;
+      }
+      
+      console.log('Attempting to like article with ID:', articleId);
+      await likeArticle(userId, articleId);
+      
+      // Toggle like state
+      const newLikedState = !isLiked;
+      setIsLiked(newLikedState);
+      
+      // Update local storage
+      const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+      if (newLikedState) {
+        if (!likedArticles.includes(articleId)) {
+          likedArticles.push(articleId);
+        }
+      } else {
+        const index = likedArticles.indexOf(articleId);
+        if (index > -1) {
+          likedArticles.splice(index, 1);
+        }
+      }
+      localStorage.setItem('likedArticles', JSON.stringify(likedArticles));
+    } catch (error) {
+      console.error('Error liking article:', error);
+      alert('Failed to like article. Please try again.');
+    } finally {
+      setIsLiking(false);
+    }
+  };
   // Format date to a readable format
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -66,6 +161,29 @@ export default function ArticleCard({ article, featured = false }: ArticleCardPr
                 <span>{getSourceFromArticle(article)}</span>
                 <span>{formatDate(article.published_date)}</span>
               </div>
+              
+              <button 
+                onClick={handleLike}
+                className={`absolute top-4 right-4 p-2 rounded-full bg-white bg-opacity-80 shadow-md transition ${isLiking ? 'cursor-wait' : 'cursor-pointer hover:bg-opacity-100'}`}
+                disabled={isLiking}
+              >
+                <svg 
+                  xmlns="http://www.w3.org/2000/svg" 
+                  width="24" 
+                  height="24" 
+                  fill={isLiked ? 'currentColor' : 'none'} 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor" 
+                  className={`${isLiked ? 'text-red-500' : 'text-gray-700'}`}
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={isLiked ? 0 : 2} 
+                    d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+                  />
+                </svg>
+              </button>
             </div>
           </div>
         </Link>
@@ -74,8 +192,8 @@ export default function ArticleCard({ article, featured = false }: ArticleCardPr
   }
 
   return (
-    <div className="bg-white border border-gray-200 hover:shadow-md transition">
-      <Link href={`/article/${article.id}`} className="block">
+    <div className="bg-white border border-gray-200 hover:shadow-md transition relative">
+      <Link href={`/article/${articleId}`} className="block">
         <div className="relative h-48">
           <Image 
             src={article.img || "/api/placeholder/800/400"}
@@ -96,6 +214,29 @@ export default function ArticleCard({ article, featured = false }: ArticleCardPr
           </div>
         </div>
       </Link>
+        
+      <button 
+        onClick={handleLike}
+        className={`absolute top-2 right-2 p-2 rounded-full bg-white bg-opacity-90 shadow-sm transition ${isLiking ? 'cursor-wait' : 'cursor-pointer hover:bg-opacity-100'}`}
+        disabled={isLiking}
+      >
+        <svg 
+          xmlns="http://www.w3.org/2000/svg" 
+          width="20" 
+          height="20" 
+          fill={isLiked ? 'currentColor' : 'none'} 
+          viewBox="0 0 24 24" 
+          stroke="currentColor" 
+          className={`${isLiked ? 'text-red-500' : 'text-gray-700'}`}
+        >
+          <path 
+            strokeLinecap="round" 
+            strokeLinejoin="round" 
+            strokeWidth={isLiked ? 0 : 2} 
+            d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+          />
+        </svg>
+      </button>
     </div>
   );
 }

@@ -6,7 +6,8 @@ export interface Summarization {
 }
 
 export interface Article {
-  id: string;
+  _id: string; // MongoDB's document ID
+  id?: string; // Keep original id as optional for backward compatibility
   title: string;
   author: string;
   published_date: string;
@@ -40,6 +41,13 @@ export interface User {
 
 export interface LoginResponse {
   access_token: string;
+  user_id?: string; // Added to match the updated backend response
+}
+
+export interface LikeResponse {
+  success: boolean;
+  user_modified_count: number;
+  error?: string;
 }
 
 export interface AuthState {

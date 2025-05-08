@@ -1,20 +1,22 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, use } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { getArticles } from '@/lib/api';
+import { getArticles, likeArticle, getUserId, isAuthenticated, getUserLikes } from '@/lib/api';
 import { Article } from '@/lib/types';
 
 export default function ArticlePage() {
-  // Use the useParams hook to get the id parameter from the URL
+  // Get the id parameter from the URL using useParams
   const params = useParams();
-  const id = params?.id as string;
-
+  const id = Array.isArray(params.id) ? params.id[0] : params.id as string;
   const [article, setArticle] = useState<Article | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isLiked, setIsLiked] = useState(false);
+  const [isLiking, setIsLiking] = useState(false);
+  const [userAuthenticated, setUserAuthenticated] = useState(false);
 
   useEffect(() => {
     const fetchArticle = async () => {
@@ -23,7 +25,7 @@ export default function ArticlePage() {
       try {
         // Fetch all articles and find the one with matching ID
         const response = await getArticles();
-        const foundArticle = response.articles.find(a => a.id === id);
+        const foundArticle = response.articles.find(a => a._id === id || a.id === id);
         
         if (foundArticle) {
           setArticle(foundArticle);
@@ -40,6 +42,89 @@ export default function ArticlePage() {
 
     fetchArticle();
   }, [id]);
+
+  useEffect(() => {
+    // Check if user is authenticated
+    const authenticated = isAuthenticated();
+    setUserAuthenticated(authenticated);
+    
+    // Check if article is in user's likes
+    const checkIfLiked = async () => {
+      if (typeof window !== 'undefined') {
+        // First check localStorage (faster)
+        const cachedLikes = localStorage.getItem('likedArticles');
+        let likedArticles: string[] = cachedLikes ? JSON.parse(cachedLikes) : [];
+        
+        // If user is authenticated, fetch fresh likes from server
+        const userId = getUserId();
+        if (authenticated && userId) {
+          try {
+            // Fetch up-to-date likes from the server
+            likedArticles = await getUserLikes(userId);
+          } catch (error) {
+            console.error('Error fetching likes:', error);
+            // Continue with cached likes if server fetch fails
+          }
+        }
+        
+        // Get the article ID in a flexible way - handle both MongoDB _id and legacy id
+        const articleId = article?._id || article?.id || id;
+        setIsLiked(articleId ? likedArticles.includes(articleId) : false);
+      }
+    };
+    
+    checkIfLiked();
+  }, [article, id, userAuthenticated]);
+
+  const handleLike = async () => {
+    if (!userAuthenticated) {
+      alert('Please log in to like articles');
+      return;
+    }
+    
+    const userId = getUserId();
+    if (!userId) {
+      alert('User ID not found. Please log in again.');
+      return;
+    }
+
+    // Make sure we have a valid article ID before sending the request
+    const articleId = article?._id || article?.id || id;
+    if (!articleId) {
+      console.error('Missing article ID for like operation:', article);
+      alert('Please try again. Could not process this article.');
+      return;
+    }
+    
+    try {
+      setIsLiking(true);
+      console.log('Attempting to like article with ID:', articleId);
+      await likeArticle(userId, articleId);
+      
+      // Toggle like state
+      const newLikedState = !isLiked;
+      setIsLiked(newLikedState);
+      
+      // Update local storage
+      const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+      if (newLikedState) {
+        if (articleId && !likedArticles.includes(articleId)) {
+          likedArticles.push(articleId);
+        }
+      } else {
+        const index = articleId ? likedArticles.indexOf(articleId) : -1;
+        if (index > -1) {
+          likedArticles.splice(index, 1);
+        }
+      }
+      localStorage.setItem('likedArticles', JSON.stringify(likedArticles));
+    } catch (error) {
+      console.error('Error liking article:', error);
+      alert('Failed to like article. Please try again.');
+    } finally {
+      setIsLiking(false);
+    }
+  };
 
   // Format date to a readable format
   const formatDate = (dateString: string) => {
@@ -126,13 +211,38 @@ export default function ArticlePage() {
               <span className="mr-4">{getSourceFromArticle(article)}</span>
               <span>{article.published_date ? formatDate(article.published_date) : "Date unavailable"}</span>
             </div>
-            <Link 
-              href={article.url} 
-              target="_blank" 
-              className="text-blue-600 hover:text-blue-800 hover:underline"
-            >
-              Read original article
-            </Link>
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={handleLike}
+                className={`flex items-center gap-1 ${isLiking ? 'cursor-wait' : 'cursor-pointer'}`}
+                disabled={isLiking}
+              >
+                <svg 
+                  xmlns="http://www.w3.org/2000/svg" 
+                  width="20" 
+                  height="20" 
+                  fill={isLiked ? 'currentColor' : 'none'} 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor" 
+                  className={`${isLiked ? 'text-red-500' : 'text-gray-600'}`}
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={isLiked ? 0 : 2} 
+                    d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+                  />
+                </svg>
+                <span className="text-sm">{isLiked ? 'Liked' : 'Like'}</span>
+              </button>
+              <Link 
+                href={article.url} 
+                target="_blank" 
+                className="text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                Read original article
+              </Link>
+            </div>
           </div>
         </div>
       </header>

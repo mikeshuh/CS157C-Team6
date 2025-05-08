@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { getArticles, generateArticles } from '@/lib/api';
+import { getArticles, generateArticles, getPersonalizedArticles, getUserLikedArticles, getUserId, isAuthenticated, likeArticle, getUserLikes } from '@/lib/api';
 import { Article } from '@/lib/types';
 import ArticleCard from '@/components/ArticleCard';
 import Image from 'next/image';
 
 // Update categories to match backend tags
 const CATEGORIES = [
+  "For You", // New personalized feed
   "All", 
   "World News", 
   "Politics", 
@@ -48,6 +49,11 @@ function HomeContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState("");
+  const [personalizationMessage, setPersonalizationMessage] = useState<string | null>(null);
+  const [likeUpdateTrigger, setLikeUpdateTrigger] = useState(0); // To trigger refresh on like changes
+  const [showLikedArticles, setShowLikedArticles] = useState(false); // Toggle between recommendations and liked articles
+  const [featuredArticleLiked, setFeaturedArticleLiked] = useState(false); // Track if featured article is liked
+  const [isLikingFeatured, setIsLikingFeatured] = useState(false); // Track if like operation is in progress
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [generationComplete, setGenerationComplete] = useState(false);
   const [generatedArticles, setGeneratedArticles] = useState<Article[]>([]);
@@ -76,14 +82,149 @@ function HomeContent() {
     }
   }, [categoryParam]);
 
+  // Watch for like changes in localStorage to refresh personalized feed
+  useEffect(() => {
+    // Only run on client side
+    if (typeof window === 'undefined') return;
+
+    const handleLikeChange = (e: StorageEvent) => {
+      // Only trigger refresh if on For You tab and user is authenticated
+      if (e.key === 'likedArticles' && selectedCategory === "For You" && isAuthenticated()) {
+        // Increment the trigger to force a refresh
+        setLikeUpdateTrigger(prev => prev + 1);
+      }
+    };
+
+    // Listen for storage events from other tabs/windows
+    window.addEventListener('storage', handleLikeChange);
+
+    return () => {
+      window.removeEventListener('storage', handleLikeChange);
+    };
+  }, [selectedCategory]);
+  
+  // Force a refresh when switching to the "For You" tab
+  useEffect(() => {
+    // When user selects the "For You" tab, always refresh content from server
+    if (selectedCategory === "For You" && isAuthenticated()) {
+      setLikeUpdateTrigger(prev => prev + 1);
+    }
+  }, [selectedCategory]);
+  
+  // Set up an interval to check for local like changes (within same tab)
+  useEffect(() => {
+    if (typeof window === 'undefined' || selectedCategory !== "For You") return;
+    
+    let prevLikedArticles = localStorage.getItem('likedArticles');
+    
+    const checkLikeChanges = setInterval(() => {
+      const currentLikedArticles = localStorage.getItem('likedArticles');
+      if (prevLikedArticles !== currentLikedArticles) {
+        prevLikedArticles = currentLikedArticles;
+        if (isAuthenticated()) {
+          setLikeUpdateTrigger(prev => prev + 1);
+        }
+      }
+    }, 2000); // Check every 2 seconds
+    
+    return () => clearInterval(checkLikeChanges);
+  }, [selectedCategory]);
+
   // Fetch news from API
   useEffect(() => {
     const fetchNews = async () => {
       setIsLoading(true);
       setError(null);
+      setPersonalizationMessage(null);
+      
+      console.log('Fetching news - showLikedArticles:', showLikedArticles, 'selectedCategory:', selectedCategory);
+      
       try {
-        const params = selectedCategory === "All" ? {} : { tags: [selectedCategory] };
-        const response = await getArticles(params);
+        let response;
+        const userId = getUserId();
+        
+        if (selectedCategory === "For You") {
+          // Check authentication status without logging errors
+          const authenticated = isAuthenticated();
+          
+          // Handle the "For You" personalized feed
+          if (authenticated && userId) {
+            if (showLikedArticles) {
+              // User wants to see their liked articles
+              try {
+                console.log('Fetching liked articles for user:', userId);
+                response = await getUserLikedArticles(userId);
+                
+                if (response.articles?.length) {
+                  setPersonalizationMessage(
+                    `Showing your ${response.articles.length} liked articles`
+                  );
+                  console.log(`Found ${response.articles.length} liked articles`);
+                } else {
+                  // Keep user on Liked tab but with a descriptive message
+                  setPersonalizationMessage('You haven\'t liked any articles yet. Click the heart icon on articles you enjoy to save them here.');
+                  console.log('No liked articles found');
+                  // Don't switch back automatically - let user decide when to switch
+                }
+              } catch (error) {
+                console.error('Error fetching liked articles:', error);
+                response = await getArticles();
+                setPersonalizationMessage('Could not retrieve your liked articles. Showing default content.');
+                setShowLikedArticles(false); // Switch back to recommendations if there's an error
+              }
+            } else {
+              // ALWAYS fetch personalized articles directly from the server
+              // This ensures we get the most up-to-date preferences regardless of local storage
+              try {
+                console.log('Fetching personalized articles for user:', userId);
+                response = await getPersonalizedArticles(userId);
+                
+                // Display personalization message based on response data
+                if (response.preferred_tags?.length) {
+                  // User has preferred tags, show personalized message with the format the user likes
+                  setPersonalizationMessage(
+                    `Articles personalized based on your interests: ${response.preferred_tags.join(', ')}`
+                  );
+                  console.log('User has preferred tags:', response.preferred_tags);
+                } else if (response.articles?.length) {
+                  // We have articles but no preferred tags - use a generic personalization message
+                  setPersonalizationMessage(
+                    'Articles personalized based on your reading history'
+                  );
+                  console.log('No preferred tags but articles found');
+                } else {
+                  // Check if user has any likes in localStorage
+                  const likedArticles = localStorage.getItem('likedArticles');
+                  const hasLikes = likedArticles && JSON.parse(likedArticles).length > 0;
+                  
+                  if (hasLikes) {
+                    setPersonalizationMessage(
+                      'Articles personalized based on your recent activity'
+                    );
+                    console.log('User has likes but no preferred tags extracted');
+                  } else {
+                    // User is logged in but doesn't have preferred tags yet
+                    setPersonalizationMessage('Like some articles to personalize your feed!');
+                    console.log('User has no likes');
+                  }
+                }
+              } catch (error) {
+                console.error('Error fetching personalized articles:', error);
+                response = await getArticles();
+                setPersonalizationMessage('Could not retrieve personalized articles. Showing default content.');
+              }
+            }
+          } else {
+            // User is not logged in, show regular articles with a message
+            response = await getArticles();
+            setPersonalizationMessage('Log in and like articles to get personalized recommendations!');
+          }
+        } else {
+          // Regular category filtering
+          const params = selectedCategory === "All" ? {} : { tags: [selectedCategory] };
+          response = await getArticles(params);
+        }
+        
         // Filter out articles without summarization
         const validArticles = response.articles.filter(article => article.summarization && article.summarization.summary);
         setNews(validArticles);
@@ -96,7 +237,7 @@ function HomeContent() {
     };
 
     fetchNews();
-  }, [selectedCategory]);
+  }, [selectedCategory, likeUpdateTrigger, showLikedArticles]); // Include showLikedArticles to trigger refresh on toggle
 
   // Filter articles based on search query
   useEffect(() => {
@@ -114,8 +255,10 @@ function HomeContent() {
       // Improved date search - handle multiple date formats
       let dateMatches = false;
       if (article.published_date) {
-        // Original date string
-        const originalDate = article.published_date.toLowerCase();
+        // Original date string - ensure it's a string before calling toLowerCase
+        const originalDate = typeof article.published_date === 'string' 
+          ? article.published_date.toLowerCase() 
+          : String(article.published_date).toLowerCase();
         
         // Convert to Date object for formatted versions
         const dateObj = new Date(article.published_date);
@@ -311,8 +454,12 @@ const QueryModal = () => {
       return article.author;
     };
     
+    // Get article ID, ensuring we handle both MongoDB formats
+    const articleId = article._id || article.id;
+    
     return {
       id: article.id,
+      _id: articleId, // Use whichever ID format is available
       title: article.title,
       summary: article.summarization?.summary || 'No summary available',
       category: getPrimaryCategory(),
@@ -322,6 +469,133 @@ const QueryModal = () => {
       img: article.img
     };
   };
+
+  // Handle like for featured article
+  const handleFeaturedLike = async (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent navigation to article page
+    e.stopPropagation(); // Prevent event bubbling
+    
+    if (!userAuthenticated()) {
+      alert('Please log in to like articles');
+      return;
+    }
+    
+    const userId = getUserId();
+    if (!userId) {
+      alert('User ID not found. Please log in again.');
+      return;
+    }
+    
+    // Use the filtered article when available (for search results), otherwise use the main news array
+    const featuredArticle = filteredNews?.[0] || news?.[0];
+    
+    // Ensure we have a valid article
+    if (!featuredArticle) {
+      console.error('No featured article available');
+      alert('Please try again. Could not process this article.');
+      return;
+    }
+    
+    // Handle both _id and id formats (MongoDB might return either)
+    const articleId = featuredArticle._id || featuredArticle.id;
+    if (!articleId) {
+      console.error('Missing article ID for like operation:', featuredArticle);
+      alert('Please try again. Could not process this article.');
+      return;
+    }
+    
+    try {
+      setIsLikingFeatured(true);
+      console.log('Attempting to like featured article with ID:', articleId);
+      await likeArticle(userId, articleId);
+      
+      // Toggle like state
+      const newLikedState = !featuredArticleLiked;
+      setFeaturedArticleLiked(newLikedState);
+      
+      // Update local storage
+      const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+      if (newLikedState) {
+        if (!likedArticles.includes(articleId)) {
+          likedArticles.push(articleId);
+        }
+      } else {
+        const index = likedArticles.indexOf(articleId);
+        if (index > -1) {
+          likedArticles.splice(index, 1);
+        }
+      }
+      localStorage.setItem('likedArticles', JSON.stringify(likedArticles));
+      
+      // Always trigger a refresh of the personalized feed when likes change,
+      // regardless of current category or search state
+      setLikeUpdateTrigger(prev => prev + 1);
+      
+      // Special case for search results - if the search and like happens while
+      // in "For You" category with "Liked" tab, immediately refresh the content
+      if (selectedCategory === "For You" && showLikedArticles) {
+        const fetchLikedAgain = async () => {
+          try {
+            const refreshedResponse = await getUserLikedArticles(userId);
+            if (refreshedResponse.articles) {
+              setNews(refreshedResponse.articles);
+              setFilteredNews(refreshedResponse.articles);
+            }
+          } catch (error) {
+            console.error('Error refreshing liked articles:', error);
+          }
+        };
+        fetchLikedAgain();
+      }
+    } catch (error) {
+      console.error('Error liking featured article:', error);
+      alert('Failed to like article. Please try again.');
+    } finally {
+      setIsLikingFeatured(false);
+    }
+  };
+  
+  // Check if user is authenticated
+  const userAuthenticated = () => {
+    return isAuthenticated();
+  };
+  
+  // Check if featured article is liked
+  useEffect(() => {
+    // When we're showing filteredNews, check the first filtered article
+    // Otherwise fall back to the first article in the news array
+    const featuredArticle = filteredNews?.[0] || news?.[0];
+    
+    if (!featuredArticle || !userAuthenticated()) {
+      setFeaturedArticleLiked(false);
+      return;
+    }
+    
+    // Handle both _id and id formats
+    const articleId = featuredArticle._id || featuredArticle.id;
+    if (!articleId) {
+      setFeaturedArticleLiked(false);
+      return;
+    }
+    
+    // Check cached likes first
+    const cachedLikes = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+    setFeaturedArticleLiked(cachedLikes.includes(articleId));
+    
+    // Then fetch from server to ensure we have the latest data
+    const userId = getUserId();
+    if (userId) {
+      getUserLikes(userId)
+        .then((likes: string[]) => {
+          localStorage.setItem('likedArticles', JSON.stringify(likes));
+          setFeaturedArticleLiked(likes.includes(articleId));
+        })
+        .catch((error: Error) => {
+          console.error('Error fetching likes for featured article:', error);
+          // Continue with cached likes if server fetch fails
+        });
+    }
+  }, [news, filteredNews, searchQuery]);
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -404,6 +678,57 @@ const QueryModal = () => {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 mb-12 mt-6">
+        {/* Personalization message with toggle switch for For You tab */}
+        {personalizationMessage && (
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6 rounded-r shadow-sm">
+            <div className="flex justify-between items-start">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-blue-700">{personalizationMessage}</p>
+                </div>
+              </div>
+              
+              {/* Tab buttons for For You tab */}
+              {selectedCategory === "For You" && isAuthenticated() && (
+                <div className="ml-4">
+                  <div className="inline-flex rounded-md shadow-sm" role="group">
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        console.log('Switching to recommended articles');
+                        setShowLikedArticles(false);
+                        setLikeUpdateTrigger(prev => prev + 1); // Force refresh
+                      }}
+                      className={`px-4 py-2 text-sm font-medium ${!showLikedArticles 
+                        ? 'text-white bg-blue-600 border border-blue-600 rounded-l-lg' 
+                        : 'text-blue-600 bg-white border border-gray-300 rounded-l-lg hover:bg-gray-100'}`}
+                    >
+                      For You
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        console.log('Switching to liked articles');
+                        setShowLikedArticles(true);
+                        setLikeUpdateTrigger(prev => prev + 1); // Force refresh
+                      }}
+                      className={`px-4 py-2 text-sm font-medium ${showLikedArticles 
+                        ? 'text-white bg-blue-600 border border-blue-600 rounded-r-lg' 
+                        : 'text-blue-600 bg-white border border-gray-300 hover:bg-gray-100 rounded-r-lg'}`}
+                    >
+                      Liked
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         {isLoading ? (
           <div className="flex justify-center py-12">
             <div className="animate-spin h-8 w-8 border-4 border-gray-900 rounded-full border-t-transparent"></div>
@@ -421,6 +746,7 @@ const QueryModal = () => {
         ) : filteredNews.length === 0 ? (
           <div className="text-center py-12">
             {searchQuery ? (
+              // No search results case from master branch
               <>
                 <p className="text-gray-600 mb-4">No articles match your search for "{searchQuery}".</p>
                 <p className="text-sm text-gray-500 mb-6">Try a different search term or category.</p>
@@ -435,7 +761,28 @@ const QueryModal = () => {
                   Clear Search
                 </button>
               </>
+            ) : selectedCategory === "For You" && showLikedArticles ? (
+              // No liked articles case from your branch
+              <>
+                <div className="mb-6">
+                  <svg className="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
+                </div>
+                <p className="text-gray-600 text-lg font-medium mb-2">No liked articles yet</p>
+                <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">When you find articles you enjoy, click the heart icon to save them here for easy reference.</p>
+                <button
+                  onClick={() => {
+                    setShowLikedArticles(false);
+                    setLikeUpdateTrigger(prev => prev + 1);
+                  }}
+                  className="bg-blue-600 text-white px-4 py-2 rounded font-serif hover:bg-blue-700 transition"
+                >
+                  Browse Recommended Articles
+                </button>
+              </>
             ) : (
+              // No articles in category (default case)
               <>
                 <p className="text-gray-600 mb-4">No articles found for this category.</p>
                 <p className="text-sm text-gray-500 mb-6">Try selecting a different category or generate new articles.</p>
@@ -454,7 +801,9 @@ const QueryModal = () => {
             {selectedCategory !== "All" && (
               <div className="mb-6">
                 <h2 className="text-3xl font-serif font-bold border-b border-gray-300 pb-2">
-                  {selectedCategory}
+                  {selectedCategory === "For You" && showLikedArticles 
+                    ? "Liked Articles" 
+                    : selectedCategory}
                 </h2>
               </div>
             )}
@@ -469,6 +818,30 @@ const QueryModal = () => {
                       {formatFeaturedArticle(filteredNews[0])?.category}
                     </div>
                   </div>
+                  
+                  {/* Like Button */}
+                  <button 
+                    onClick={handleFeaturedLike}
+                    className={`absolute top-4 right-4 z-20 p-2 rounded-full bg-white bg-opacity-80 shadow-md transition ${isLikingFeatured ? 'cursor-wait' : 'cursor-pointer hover:bg-opacity-100'}`}
+                    disabled={isLikingFeatured}
+                  >
+                    <svg 
+                      xmlns="http://www.w3.org/2000/svg" 
+                      width="24" 
+                      height="24" 
+                      fill={featuredArticleLiked ? 'currentColor' : 'none'} 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor" 
+                      className={`${featuredArticleLiked ? 'text-red-500' : 'text-gray-700'}`}
+                    >
+                      <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        strokeWidth={featuredArticleLiked ? 0 : 2} 
+                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+                      />
+                    </svg>
+                  </button>
                   
                   {/* Image Container with Fixed Height */}
                   <div className="relative w-full h-96">
@@ -501,9 +874,9 @@ const QueryModal = () => {
                   
                   {/* Read Full Article Button */}
                   <a 
-                    href={`/article/${filteredNews[0].id}`}
-                    className="mt-4 block bg-gray-900 text-white px-4 py-2 text-center hover:bg-gray-800 transition"
-                  >
+  href={`/article/${filteredNews[0]._id || filteredNews[0].id}`}
+  className="mt-4 block bg-gray-900 text-white px-4 py-2 text-center hover:bg-gray-800 transition"
+>
                     Read Article
                   </a>
                 </div>
@@ -511,11 +884,14 @@ const QueryModal = () => {
             )}
 
             {/* News Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {filteredNews.slice(1).map((article) => (
-                <ArticleCard key={article.id} article={article} />
-              ))}
-            </div>
+<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+  {filteredNews.slice(1).map((article, index) => (
+    <ArticleCard 
+      key={article._id ? String(article._id) : `article-${index}`} 
+      article={article} 
+    />
+  ))}
+</div>
           </>
         )}
       </div>
