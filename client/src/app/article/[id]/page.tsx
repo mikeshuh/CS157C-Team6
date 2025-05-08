@@ -4,7 +4,7 @@ import React, { useState, useEffect, use } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { getArticles, likeArticle, getUserId, isAuthenticated, getUserLikes } from '@/lib/api';
+import { getArticles, getUserId, isAuthenticated, getUserLikes, toggleArticleLike } from '@/lib/api';
 import { Article } from '@/lib/types';
 
 export default function ArticlePage() {
@@ -81,12 +81,6 @@ export default function ArticlePage() {
       alert('Please log in to like articles');
       return;
     }
-    
-    const userId = getUserId();
-    if (!userId) {
-      alert('User ID not found. Please log in again.');
-      return;
-    }
 
     // Make sure we have a valid article ID before sending the request
     const articleId = article?._id || article?.id || id;
@@ -99,25 +93,10 @@ export default function ArticlePage() {
     try {
       setIsLiking(true);
       console.log('Attempting to like article with ID:', articleId);
-      await likeArticle(userId, articleId);
       
-      // Toggle like state
-      const newLikedState = !isLiked;
-      setIsLiked(newLikedState);
-      
-      // Update local storage
-      const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
-      if (newLikedState) {
-        if (articleId && !likedArticles.includes(articleId)) {
-          likedArticles.push(articleId);
-        }
-      } else {
-        const index = articleId ? likedArticles.indexOf(articleId) : -1;
-        if (index > -1) {
-          likedArticles.splice(index, 1);
-        }
-      }
-      localStorage.setItem('likedArticles', JSON.stringify(likedArticles));
+      // Use the centralized helper function
+      const result = await toggleArticleLike(articleId);
+      setIsLiked(result.isLiked);
     } catch (error) {
       console.error('Error liking article:', error);
       alert('Failed to like article. Please try again.');
