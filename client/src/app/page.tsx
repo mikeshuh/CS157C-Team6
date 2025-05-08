@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { getArticles, generateArticles, getPersonalizedArticles, getUserLikedArticles, getUserId, isAuthenticated } from '@/lib/api';
+import { getArticles, generateArticles, getPersonalizedArticles, getUserLikedArticles, getUserId, isAuthenticated, likeArticle, getUserLikes } from '@/lib/api';
 import { Article } from '@/lib/types';
 import ArticleCard from '@/components/ArticleCard';
 import Image from 'next/image';
@@ -50,6 +50,8 @@ function HomeContent() {
   const [personalizationMessage, setPersonalizationMessage] = useState<string | null>(null);
   const [likeUpdateTrigger, setLikeUpdateTrigger] = useState(0); // To trigger refresh on like changes
   const [showLikedArticles, setShowLikedArticles] = useState(false); // Toggle between recommendations and liked articles
+  const [featuredArticleLiked, setFeaturedArticleLiked] = useState(false); // Track if featured article is liked
+  const [isLikingFeatured, setIsLikingFeatured] = useState(false); // Track if like operation is in progress
   
   // Set the current date on the client side
   useEffect(() => {
@@ -149,12 +151,10 @@ function HomeContent() {
                   );
                   console.log(`Found ${response.articles.length} liked articles`);
                 } else {
-                  setPersonalizationMessage('You haven\'t liked any articles yet.');
+                  // Keep user on Liked tab but with a descriptive message
+                  setPersonalizationMessage('You haven\'t liked any articles yet. Click the heart icon on articles you enjoy to save them here.');
                   console.log('No liked articles found');
-                  // If no liked articles, switch back to recommendations
-                  if (response.articles.length === 0) {
-                    setShowLikedArticles(false);
-                  }
+                  // Don't switch back automatically - let user decide when to switch
                 }
               } catch (error) {
                 console.error('Error fetching liked articles:', error);
@@ -278,8 +278,12 @@ function HomeContent() {
       return article.author;
     };
     
+    // Get article ID, ensuring we handle both MongoDB formats
+    const articleId = article._id || article.id;
+    
     return {
       id: article.id,
+      _id: articleId, // Use whichever ID format is available
       title: article.title,
       summary: article.summarization?.summary || 'No summary available',
       category: getPrimaryCategory(),
@@ -289,6 +293,110 @@ function HomeContent() {
       img: article.img
     };
   };
+
+  // Handle like for featured article
+  const handleFeaturedLike = async (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent navigation to article page
+    e.stopPropagation(); // Prevent event bubbling
+    
+    if (!userAuthenticated()) {
+      alert('Please log in to like articles');
+      return;
+    }
+    
+    const userId = getUserId();
+    if (!userId) {
+      alert('User ID not found. Please log in again.');
+      return;
+    }
+    
+    // Ensure we have a valid article
+    if (!news[0]) {
+      console.error('No featured article available');
+      alert('Please try again. Could not process this article.');
+      return;
+    }
+    
+    // Handle both _id and id formats (MongoDB might return either)
+    const articleId = news[0]._id || news[0].id;
+    if (!articleId) {
+      console.error('Missing article ID for like operation:', news[0]);
+      alert('Please try again. Could not process this article.');
+      return;
+    }
+    
+    try {
+      setIsLikingFeatured(true);
+      console.log('Attempting to like featured article with ID:', articleId);
+      await likeArticle(userId, articleId);
+      
+      // Toggle like state
+      const newLikedState = !featuredArticleLiked;
+      setFeaturedArticleLiked(newLikedState);
+      
+      // Update local storage
+      const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+      if (newLikedState) {
+        if (!likedArticles.includes(articleId)) {
+          likedArticles.push(articleId);
+        }
+      } else {
+        const index = likedArticles.indexOf(articleId);
+        if (index > -1) {
+          likedArticles.splice(index, 1);
+        }
+      }
+      localStorage.setItem('likedArticles', JSON.stringify(likedArticles));
+      
+      // Trigger refresh if on For You tab
+      if (selectedCategory === "For You") {
+        setLikeUpdateTrigger(prev => prev + 1);
+      }
+    } catch (error) {
+      console.error('Error liking featured article:', error);
+      alert('Failed to like article. Please try again.');
+    } finally {
+      setIsLikingFeatured(false);
+    }
+  };
+  
+  // Check if user is authenticated
+  const userAuthenticated = () => {
+    return isAuthenticated();
+  };
+  
+  // Check if featured article is liked
+  useEffect(() => {
+    if (!news[0] || !userAuthenticated()) {
+      setFeaturedArticleLiked(false);
+      return;
+    }
+    
+    // Handle both _id and id formats
+    const articleId = news[0]._id || news[0].id;
+    if (!articleId) {
+      setFeaturedArticleLiked(false);
+      return;
+    }
+    
+    // Check cached likes first
+    const cachedLikes = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+    setFeaturedArticleLiked(cachedLikes.includes(articleId));
+    
+    // Then fetch from server to ensure we have the latest data
+    const userId = getUserId();
+    if (userId) {
+      getUserLikes(userId)
+        .then((likes: string[]) => {
+          localStorage.setItem('likedArticles', JSON.stringify(likes));
+          setFeaturedArticleLiked(likes.includes(articleId));
+        })
+        .catch((error: Error) => {
+          console.error('Error fetching likes for featured article:', error);
+          // Continue with cached likes if server fetch fails
+        });
+    }
+  }, [news]);
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -406,14 +514,38 @@ function HomeContent() {
           </div>
         ) : news.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-gray-600 mb-4">No articles found for this category.</p>
-            <p className="text-sm text-gray-500 mb-6">Try selecting a different category or generate new articles.</p>
-            <button 
-              onClick={handleGenerateArticles}
-              className="bg-gray-900 text-white px-4 py-2 rounded font-serif hover:bg-gray-800 transition"
-            >
-              Generate Articles
-            </button>
+            {/* Different empty state based on whether we're in Liked view or regular category view */}
+            {selectedCategory === "For You" && showLikedArticles ? (
+              <>
+                <div className="mb-6">
+                  <svg className="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
+                </div>
+                <p className="text-gray-600 text-lg font-medium mb-2">No liked articles yet</p>
+                <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">When you find articles you enjoy, click the heart icon to save them here for easy reference.</p>
+                <button
+                  onClick={() => {
+                    setShowLikedArticles(false);
+                    setLikeUpdateTrigger(prev => prev + 1);
+                  }}
+                  className="bg-blue-600 text-white px-4 py-2 rounded font-serif hover:bg-blue-700 transition"
+                >
+                  Browse Recommended Articles
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-600 mb-4">No articles found for this category.</p>
+                <p className="text-sm text-gray-500 mb-6">Try selecting a different category or generate new articles.</p>
+                <button 
+                  onClick={handleGenerateArticles}
+                  className="bg-gray-900 text-white px-4 py-2 rounded font-serif hover:bg-gray-800 transition"
+                >
+                  Generate Articles
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <>
@@ -436,6 +568,30 @@ function HomeContent() {
                       {formatFeaturedArticle(news[0])?.category}
                     </div>
                   </div>
+                  
+                  {/* Like Button */}
+                  <button 
+                    onClick={handleFeaturedLike}
+                    className={`absolute top-4 right-4 z-20 p-2 rounded-full bg-white bg-opacity-80 shadow-md transition ${isLikingFeatured ? 'cursor-wait' : 'cursor-pointer hover:bg-opacity-100'}`}
+                    disabled={isLikingFeatured}
+                  >
+                    <svg 
+                      xmlns="http://www.w3.org/2000/svg" 
+                      width="24" 
+                      height="24" 
+                      fill={featuredArticleLiked ? 'currentColor' : 'none'} 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor" 
+                      className={`${featuredArticleLiked ? 'text-red-500' : 'text-gray-700'}`}
+                    >
+                      <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        strokeWidth={featuredArticleLiked ? 0 : 2} 
+                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+                      />
+                    </svg>
+                  </button>
                   
                   {/* Image Container with Fixed Height */}
                   <div className="relative w-full h-96">
@@ -468,7 +624,7 @@ function HomeContent() {
                   
                   {/* Read Full Article Button */}
                   <a 
-                    href={`/article/${news[0]._id}`}
+                    href={`/article/${news[0]._id || news[0].id}`}
                     className="mt-4 block bg-gray-900 text-white px-4 py-2 text-center hover:bg-gray-800 transition"
                   >
                     Read Article
