@@ -802,3 +802,95 @@ def test_auth():
         "user": current_user,
         "message": "Authentication successful"
     })
+
+@main.route('/api/update_article/<article_id>', methods=['PUT'])
+@jwt_required()
+def update_article(article_id):
+    '''
+    Update an article's summary and key points
+    Required: User must be logged in with admin role
+    '''
+    # Get the current user identity from JWT
+    try:
+        current_user = get_jwt_identity()
+        
+        # Check if we have valid user data
+        if not current_user:
+            return jsonify({"success": False, "error": "Authentication required"}), 401
+        
+        # Extract role - handle both dict and string formats
+        user_role = None
+        if isinstance(current_user, dict):
+            user_role = current_user.get('role')
+            username = current_user.get('username', 'unknown')
+        elif isinstance(current_user, str):
+            # Try to handle string format (fallback)
+            user_role = 'admin' if 'admin' in current_user.lower() else 'user'
+            username = current_user
+        else:
+            username = 'unknown'
+        
+        # Check admin privileges 
+        if user_role != 'admin':
+            return jsonify({
+                "success": False, 
+                "error": "Admin privileges required for this operation"
+            }), 403
+        
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No data provided"}), 400
+        
+        # Extract the fields to update
+        update_fields = {}
+        
+        if 'summary' in data:
+            update_fields['summarization.summary'] = data['summary']
+        
+        if 'key_points' in data and isinstance(data['key_points'], list):
+            update_fields['summarization.key_points'] = data['key_points']
+        
+        if not update_fields:
+            return jsonify({"success": False, "error": "No valid fields to update"}), 400
+            
+        # Convert string ID to ObjectId for MongoDB
+        try:
+            article_obj_id = ObjectId(article_id)
+        except Exception as e:
+            return jsonify({
+                "success": False,
+                "error": "Invalid article ID format"
+            }), 400
+        
+        # Update the article in MongoDB
+        result = mongo.db.articles.update_one(
+            {"_id": article_obj_id},
+            {"$set": update_fields}
+        )
+        
+        # Check if article was found and updated
+        if result.matched_count == 0:
+            return jsonify({
+                "success": False,
+                "error": "Article not found"
+            }), 404
+        
+        # Get the updated article to return
+        updated_article = mongo.db.articles.find_one({"_id": article_obj_id})
+        if updated_article:
+            updated_article['_id'] = str(updated_article['_id'])
+        
+        print(f"Article {article_id} successfully updated by {username}")
+        return jsonify({
+            "success": True,
+            "message": f"Article with ID {article_id} updated successfully",
+            "article": updated_article
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in update_article: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": f"An error occurred: {str(e)}"
+        }), 500
