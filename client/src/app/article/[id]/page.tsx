@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, use } from 'react';
-import { useParams } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { getArticles, getUserId, isAuthenticated, getUserLikes, toggleArticleLike } from '@/lib/api';
+import { getArticles, getUserId, isAuthenticated, getUserLikes, toggleArticleLike, isAdmin, deleteArticle } from '@/lib/api';
 import { Article } from '@/lib/types';
 
 export default function ArticlePage() {
+  const router = useRouter();
   // Get the id parameter from the URL using useParams
   const params = useParams();
   const id = Array.isArray(params.id) ? params.id[0] : params.id as string;
@@ -17,6 +18,9 @@ export default function ArticlePage() {
   const [isLiked, setIsLiked] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
   const [userAuthenticated, setUserAuthenticated] = useState(false);
+  const [isUserAdmin, setIsUserAdmin] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     const fetchArticle = async () => {
@@ -41,60 +45,77 @@ export default function ArticlePage() {
     };
 
     fetchArticle();
+    
+    // Check if user is authenticated
+    setUserAuthenticated(isAuthenticated());
+    
+    // Check if user is admin
+    setIsUserAdmin(isAdmin());
+    
   }, [id]);
 
+  // Listen for logout events to update admin status
   useEffect(() => {
-    // Check if user is authenticated
-    const authenticated = isAuthenticated();
-    setUserAuthenticated(authenticated);
+    const handleLogout = () => {
+      setUserAuthenticated(false);
+      setIsUserAdmin(false);
+      setIsLiked(false);
+    };
+
+    window.addEventListener('userLogout', handleLogout);
     
-    // Check if article is in user's likes
+    // Clean up the event listener when component unmounts
+    return () => {
+      window.removeEventListener('userLogout', handleLogout);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Check if article is liked
     const checkIfLiked = async () => {
-      if (typeof window !== 'undefined') {
-        // First check localStorage (faster)
-        const cachedLikes = localStorage.getItem('likedArticles');
-        let likedArticles: string[] = cachedLikes ? JSON.parse(cachedLikes) : [];
-        
-        // If user is authenticated, fetch fresh likes from server
-        const userId = getUserId();
-        if (authenticated && userId) {
-          try {
-            // Fetch up-to-date likes from the server
-            likedArticles = await getUserLikes(userId);
-          } catch (error) {
-            console.error('Error fetching likes:', error);
-            // Continue with cached likes if server fetch fails
-          }
+      if (!userAuthenticated || !article) {
+        setIsLiked(false);
+        return;
+      }
+      
+      // Start with cached likes if available
+      const cachedLikes = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+      const articleId = article._id || article.id;
+      setIsLiked(articleId ? cachedLikes.includes(articleId) : false);
+      
+      // Then fetch from server to ensure we have the latest data
+      const userId = getUserId();
+      if (userId) {
+        try {
+          const likes = await getUserLikes(userId);
+          localStorage.setItem('likedArticles', JSON.stringify(likes));
+          setIsLiked(articleId ? likes.includes(articleId) : false);
+        } catch (error) {
+          console.error('Error fetching likes:', error);
+          // Continue with cached likes if server fetch fails
         }
-        
-        // Get the article ID in a flexible way - handle both MongoDB _id and legacy id
-        const articleId = article?._id || article?.id || id;
-        setIsLiked(articleId ? likedArticles.includes(articleId) : false);
       }
     };
     
     checkIfLiked();
-  }, [article, id, userAuthenticated]);
+  }, [article, userAuthenticated]);
 
   const handleLike = async () => {
     if (!userAuthenticated) {
       alert('Please log in to like articles');
       return;
     }
-
-    // Make sure we have a valid article ID before sending the request
-    const articleId = article?._id || article?.id || id;
+    
+    if (!article) return;
+    
+    const articleId = article._id || article.id;
     if (!articleId) {
-      console.error('Missing article ID for like operation:', article);
-      alert('Please try again. Could not process this article.');
+      console.error('Missing article ID for like operation');
       return;
     }
     
     try {
       setIsLiking(true);
-      console.log('Attempting to like article with ID:', articleId);
-      
-      // Use the centralized helper function
       const result = await toggleArticleLike(articleId);
       setIsLiked(result.isLiked);
     } catch (error) {
@@ -104,15 +125,54 @@ export default function ArticlePage() {
       setIsLiking(false);
     }
   };
+  
+  const handleDeleteClick = () => {
+    setShowDeleteConfirm(true);
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteConfirm(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!article) return;
+    
+    const articleId = article._id || article.id;
+    if (!articleId) {
+      console.error('Missing article ID for delete operation');
+      return;
+    }
+    
+    try {
+      setIsDeleting(true);
+      const result = await deleteArticle(articleId);
+      
+      if (result.success) {
+        // Redirect to home page
+        router.push('/');
+      } else {
+        alert('Failed to delete article: ' + result.message);
+      }
+    } catch (error: any) {
+      console.error('Error deleting article:', error);
+      alert('Failed to delete article: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
 
   // Format date to a readable format
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'Date unavailable';
+    
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
-      weekday: 'long',
       month: 'long', 
       day: 'numeric',
-      year: 'numeric'
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
@@ -127,8 +187,8 @@ export default function ArticlePage() {
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-12">
-        <div className="flex justify-center">
-          <div className="animate-spin h-8 w-8 border-4 border-gray-900 rounded-full border-t-transparent"></div>
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin h-12 w-12 border-4 border-gray-900 rounded-full border-t-transparent"></div>
         </div>
       </div>
     );
@@ -167,24 +227,15 @@ export default function ArticlePage() {
   }
 
   return (
-    <main className="bg-gray-50 pb-12">
-      {/* Article Header */}
-      <header className="bg-white border-b border-gray-200 py-6 mb-6">
-        <div className="container mx-auto px-4">
-          <Link href="/" className="text-gray-600 hover:text-gray-900 mb-4 inline-block">
-            ← Back to all articles
-          </Link>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {article.summarization?.tags.map((tag) => (
-              <span 
-                key={tag} 
-                className="bg-gray-200 text-gray-800 px-2 py-1 text-xs font-medium rounded"
-              >
-                {tag}
-              </span>
-            ))}
+    <main className="min-h-screen bg-gray-50">
+      <header className="bg-white border-b border-gray-200">
+        <div className="container mx-auto px-4 py-6">
+          <div className="mb-6">
+            <Link href="/" className="text-gray-600 hover:text-gray-900">
+              ← Back to Articles
+            </Link>
           </div>
-          <h1 className="text-4xl font-serif font-bold mb-3">{article.title}</h1>
+          <h1 className="text-3xl md:text-4xl font-serif font-bold text-gray-900 mb-4">{article.title}</h1>
           <div className="flex justify-between items-center text-gray-600 text-sm">
             <div className="flex items-center">
               <span className="mr-4">{getSourceFromArticle(article)}</span>
@@ -214,6 +265,31 @@ export default function ArticlePage() {
                 </svg>
                 <span className="text-sm">{isLiked ? 'Liked' : 'Like'}</span>
               </button>
+              
+              {isUserAdmin && (
+                <button 
+                  onClick={handleDeleteClick}
+                  className="flex items-center gap-1 text-red-600 hover:text-red-800"
+                >
+                  <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    width="20" 
+                    height="20" 
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    stroke="currentColor"
+                  >
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      strokeWidth={2} 
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" 
+                    />
+                  </svg>
+                  <span className="text-sm">Delete</span>
+                </button>
+              )}
+              
               <Link 
                 href={article.url} 
                 target="_blank" 
@@ -227,7 +303,7 @@ export default function ArticlePage() {
       </header>
 
       {/* Article Content */}
-      <div className="container mx-auto px-4">
+      <div className="container mx-auto px-4 py-12">
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
           {/* Featured Image */}
           <div className="relative h-96 w-full">
@@ -271,6 +347,31 @@ export default function ArticlePage() {
           </div>
         </div>
       </div>
+      
+      {/* Delete confirmation dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 flex items-center justify-center backdrop-blur-sm bg-black/30 z-50" onClick={handleCancelDelete}>
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-bold mb-4">Delete Article</h3>
+            <p className="mb-6">Are you sure you want to delete "{article.title}"? This action cannot be undone.</p>
+            <div className="flex justify-end space-x-3">
+              <button 
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                onClick={handleCancelDelete}
+              >
+                Cancel
+              </button>
+              <button 
+                className={`px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 ${isDeleting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
