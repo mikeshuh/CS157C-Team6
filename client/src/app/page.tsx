@@ -543,13 +543,17 @@ const QueryModal = () => {
   
   // Check if featured article is liked
   useEffect(() => {
-    if (!news[0] || !userAuthenticated()) {
+    // When we're showing filteredNews, check the first filtered article
+    // Otherwise fall back to the first article in the news array
+    const featuredArticle = filteredNews?.[0] || news?.[0];
+    
+    if (!featuredArticle || !userAuthenticated()) {
       setFeaturedArticleLiked(false);
       return;
     }
     
     // Handle both _id and id formats
-    const articleId = news[0]._id || news[0].id;
+    const articleId = featuredArticle._id || featuredArticle.id;
     if (!articleId) {
       setFeaturedArticleLiked(false);
       return;
@@ -572,7 +576,7 @@ const QueryModal = () => {
           // Continue with cached likes if server fetch fails
         });
     }
-  }, [news]);
+  }, [news, filteredNews, searchQuery]);
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -778,7 +782,9 @@ const QueryModal = () => {
             {selectedCategory !== "All" && (
               <div className="mb-6">
                 <h2 className="text-3xl font-serif font-bold border-b border-gray-300 pb-2">
-                  {selectedCategory}
+                  {selectedCategory === "For You" && showLikedArticles 
+                    ? "Liked Articles" 
+                    : selectedCategory}
                 </h2>
               </div>
             )}
