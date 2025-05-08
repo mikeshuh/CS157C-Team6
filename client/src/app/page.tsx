@@ -135,7 +135,7 @@ const QueryModal = () => {
   
   return (
     <div className={`fixed inset-0 z-50 flex items-center justify-center ${!isModalOpen ? 'hidden' : ''}`}>
-      <div className="fixed inset-0 bg-gray-900 bg-opacity-70 backdrop-blur-sm"></div>
+      <div className="fixed inset-0 bg-gray bg-opacity-70 backdrop-blur-sm"></div>
 
       {/* Modal content */}
       <div className="relative bg-white p-6 rounded border border-gray-300 shadow-xl w-full max-w-md z-50">
