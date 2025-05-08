@@ -486,17 +486,20 @@ const QueryModal = () => {
       return;
     }
     
+    // Use the filtered article when available (for search results), otherwise use the main news array
+    const featuredArticle = filteredNews?.[0] || news?.[0];
+    
     // Ensure we have a valid article
-    if (!news[0]) {
+    if (!featuredArticle) {
       console.error('No featured article available');
       alert('Please try again. Could not process this article.');
       return;
     }
     
     // Handle both _id and id formats (MongoDB might return either)
-    const articleId = news[0]._id || news[0].id;
+    const articleId = featuredArticle._id || featuredArticle.id;
     if (!articleId) {
-      console.error('Missing article ID for like operation:', news[0]);
+      console.error('Missing article ID for like operation:', featuredArticle);
       alert('Please try again. Could not process this article.');
       return;
     }
@@ -524,9 +527,25 @@ const QueryModal = () => {
       }
       localStorage.setItem('likedArticles', JSON.stringify(likedArticles));
       
-      // Trigger refresh if on For You tab
-      if (selectedCategory === "For You") {
-        setLikeUpdateTrigger(prev => prev + 1);
+      // Always trigger a refresh of the personalized feed when likes change,
+      // regardless of current category or search state
+      setLikeUpdateTrigger(prev => prev + 1);
+      
+      // Special case for search results - if the search and like happens while
+      // in "For You" category with "Liked" tab, immediately refresh the content
+      if (selectedCategory === "For You" && showLikedArticles) {
+        const fetchLikedAgain = async () => {
+          try {
+            const refreshedResponse = await getUserLikedArticles(userId);
+            if (refreshedResponse.articles) {
+              setNews(refreshedResponse.articles);
+              setFilteredNews(refreshedResponse.articles);
+            }
+          } catch (error) {
+            console.error('Error refreshing liked articles:', error);
+          }
+        };
+        fetchLikedAgain();
       }
     } catch (error) {
       console.error('Error liking featured article:', error);
