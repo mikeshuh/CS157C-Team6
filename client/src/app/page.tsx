@@ -46,7 +46,15 @@ function HomeContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState("");
-  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [generationComplete, setGenerationComplete] = useState(false);
+  const [generatedArticles, setGeneratedArticles] = useState<Article[]>([]);
+  const openModal = () => setIsModalOpen(true);
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setGenerationComplete(false);
+  }
+    
   // Set the current date on the client side
   useEffect(() => {
     setCurrentDate(new Date().toLocaleDateString('en-US', { 
@@ -88,17 +96,34 @@ function HomeContent() {
     fetchNews();
   }, [selectedCategory]);
 
-  // Handle generating articles
-  const handleGenerateArticles = async () => {
+const handleGenerateArticles = async () => {
+  openModal();
+};
+
+
+const QueryModal = () => {
+  const [queryInput, setQueryInput] = useState('');
+
+  const handleModalSubmit = async () => {
     try {
       setIsLoading(true);
-      await generateArticles({ q: 'latest news' });
+      setGenerationComplete(false);
+      //console.log('User query:', queryInput);
+
+      // Close the modal
+      //closeModal();
+      // Use the queryInput from state
+      //await generateArticles({ q: queryInput });
+      const result = await generateArticles({ q: queryInput });
+      console.log(result.articles_processed)
+      setGeneratedArticles(result.articles_processed)
       // Refresh articles after generation
       const response = await getArticles(
         selectedCategory === "All" ? {} : { tags: [selectedCategory] }
       );
       const validArticles = response.articles.filter(article => article.summarization && article.summarization.summary);
       setNews(validArticles);
+      setGenerationComplete(true);
     } catch (err) {
       console.error('Error generating articles:', err);
       setError('Failed to generate articles. Please try again later.');
@@ -106,6 +131,98 @@ function HomeContent() {
       setIsLoading(false);
     }
   };
+
+  
+  return (
+    <div className={`fixed inset-0 z-50 flex items-center justify-center ${!isModalOpen ? 'hidden' : ''}`}>
+      <div className="fixed inset-0 bg-gray bg-opacity-70 backdrop-blur-sm"></div>
+
+      {/* Modal content */}
+      <div className="relative bg-white p-6 rounded border border-gray-300 shadow-xl w-full max-w-md z-50">
+        <h3 className="text-2xl font-serif font-bold mb-6 text-center border-b border-gray-200 pb-3">Generate Articles</h3>
+
+        {!generationComplete ? (
+          <>
+            {!isLoading && (
+              <div className="mb-6">
+                <label className="block text-sm font-serif font-medium text-gray-700 mb-2">
+                  What news would you like to generate?
+                </label>
+                <input
+                  type="text"
+                  value={queryInput}
+                  onChange={(e) => setQueryInput(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded font-serif focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                  placeholder="Enter search query"
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3 mt-8">
+              <button
+                onClick={closeModal}
+                disabled={isLoading}
+                className="px-4 py-2 bg-gray-100 text-gray-800 border border-gray-300 rounded font-serif hover:bg-gray-200 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleModalSubmit}
+                disabled={isLoading}
+                className="px-6 py-2 bg-gray-900 text-white rounded font-serif hover:bg-gray-800 transition disabled:opacity-50 flex items-center justify-center"
+              >
+                {isLoading ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent mr-2"></div>
+                    <span>Generating...</span>
+                  </>
+                ) : 'Generate'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-green-600 font-serif text-center mb-6 border-b border-gray-200 pb-4">
+              <div className="flex items-center justify-center mb-2">
+                <svg className="w-6 h-6 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                <span className="text-lg font-medium">Articles generated successfully!</span>
+              </div>
+            </div>
+            
+            <div className="max-h-64 overflow-y-auto mb-6">
+              {generatedArticles.length > 0 && (
+                <>
+                  <h3 className="text-xl font-serif font-bold mb-4">Generated Articles:</h3>
+                  {generatedArticles.map((article) => (
+                    <div 
+                      key={article.id} 
+                      className="p-4 mb-3 border border-gray-200 rounded shadow-sm bg-white hover:border-gray-300 transition"
+                    >
+                      <p className="font-serif font-medium text-gray-800">{article.title}</p>
+                      <p className="text-gray-500 text-xs mt-1">ID: {article.id}</p>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+            
+            <div className="flex justify-center mt-6">
+              <button
+                onClick={closeModal}
+                className="px-6 py-2 bg-gray-900 text-white rounded font-serif hover:bg-gray-800 transition"
+              >
+                Close
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 
   // Format featured article data
   const formatFeaturedArticle = (article: Article) => {
@@ -258,7 +375,7 @@ function HomeContent() {
                     <div className="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent opacity-90"></div>
                     
                     {/* Text Container - Positioned at Bottom */}
-                    <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 text-white z-10">
+                    <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 text-white">
                       <h2 className="text-2xl md:text-3xl font-serif font-bold mb-3">
                         {formatFeaturedArticle(news[0])?.title}
                       </h2>
@@ -296,7 +413,7 @@ function HomeContent() {
       </div>
 
       {/* Generate Articles Button */}
-      <div className="fixed bottom-4 right-4">
+      <div className="fixed bottom-4 right-4">    
         <button 
           onClick={handleGenerateArticles}
           className="bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg font-serif hover:bg-blue-700 transition"
@@ -305,7 +422,7 @@ function HomeContent() {
           {isLoading ? 'Generating...' : 'Generate Articles'}
         </button>
       </div>
-
+      <QueryModal/>
       {/* Simple Call to Action */}
       <section className="py-8 bg-gray-100 border-t border-gray-200">
         <div className="container mx-auto px-4 text-center">
