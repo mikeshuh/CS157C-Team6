@@ -29,6 +29,7 @@ export default function NavBar() {
   const [auth, setAuth] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const router = useRouter();
   const pathname = usePathname();
   const categoriesRef = useRef<HTMLDivElement>(null);
@@ -56,22 +57,101 @@ export default function NavBar() {
     };
   }, []);
 
+  // Update search input when URL parameter changes
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const searchParam = url.searchParams.get('search') || '';
+    setSearchQuery(searchParam);
+  }, [pathname]);
+
   const handleLogout = () => {
     logout();
     setAuth(false);
     router.push('/');
   };
 
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Update URL with search query parameter
+    const url = new URL(window.location.href);
+    
+    // Always redirect to home page for search results
+    url.pathname = '/';
+    
+    if (searchQuery.trim()) {
+      url.searchParams.set('search', searchQuery);
+    } else {
+      url.searchParams.delete('search');
+    }
+    
+    // Preserve category if it exists
+    if (url.searchParams.has('category')) {
+      const category = url.searchParams.get('category');
+      if (category) {
+        url.searchParams.set('category', category);
+      }
+    }
+    
+    // Use router to navigate to the new URL
+    router.push(url.pathname + url.search);
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    
+    // If we're on the home page, update the URL
+    if (pathname === '/') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('search');
+      router.push(url.pathname + url.search);
+    }
+  };
+
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 w-full">
-      <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo/Brand */}
-          <Link href="/" className="font-black text-2xl font-serif tracking-tight">
-            BRIEFLY
-          </Link>
+      <div className="container mx-auto px-4 relative">
+        <div className="flex items-center justify-center h-16">
+          {/* Logo and Search - Absolutely positioned left */}
+          <div className="absolute left-4 flex items-center">
+            <Link href="/" className="font-black text-2xl font-serif tracking-tight">
+              BRIEFLY
+            </Link>
+            
+            {/* Search bar - Desktop */}
+            <div className="hidden md:flex ml-6">
+              <form onSubmit={handleSearch} className="relative">
+                <input
+                  type="text"
+                  placeholder="Search articles..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="py-1 pl-3 pr-10 rounded-md border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-gray-800 focus:border-gray-800 w-64"
+                />
+                {searchQuery && (
+                  <button 
+                    type="button"
+                    onClick={clearSearch}
+                    className="absolute right-8 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+                <button 
+                  type="submit" 
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-800"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                  </svg>
+                </button>
+              </form>
+            </div>
+          </div>
           
-          {/* Desktop Navigation */}
+          {/* Center: Desktop Navigation - True center of page */}
           <nav className="hidden md:flex space-x-6">
             <Link href="/" className="font-serif hover:text-gray-900 hover:underline">Home</Link>
             
@@ -111,8 +191,23 @@ export default function NavBar() {
             <Link href="/about" className="font-serif hover:text-gray-900 hover:underline">About</Link>
           </nav>
           
-          {/* Auth Buttons */}
-          <div className="flex items-center space-x-4">
+          {/* Auth Buttons and Mobile Menu - Absolutely positioned right */}
+          <div className="absolute right-4 flex items-center space-x-4">
+            {/* Search bar - Mobile */}
+            <div className="md:hidden">
+              <button 
+                onClick={() => {
+                  setMobileMenuOpen(!mobileMenuOpen);
+                  setCategoriesOpen(false);
+                }}
+                className="text-gray-700 hover:text-gray-900"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                </svg>
+              </button>
+            </div>
+            
             {auth ? (
               <button
                 onClick={handleLogout}
@@ -133,23 +228,53 @@ export default function NavBar() {
                 </Link>
               </>
             )}
-          </div>
           
-          {/* Mobile Menu Button */}
-          <button 
-            className="md:hidden" 
-            aria-label="Menu"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
+            {/* Mobile Menu Button */}
+            <button 
+              className="md:hidden" 
+              aria-label="Menu"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
         </div>
         
         {/* Mobile Menu */}
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-gray-200 py-2">
+            {/* Mobile Search */}
+            <form onSubmit={handleSearch} className="mb-4 pt-3 relative">
+              <input
+                type="text"
+                placeholder="Search articles..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="py-2 px-3 rounded-md border border-gray-300 text-sm w-full focus:outline-none focus:ring-1 focus:ring-gray-800 focus:border-gray-800"
+              />
+              {searchQuery && (
+                <button 
+                  type="button"
+                  onClick={clearSearch}
+                  className="absolute right-10 top-1/2 transform -translate-y-1/4 text-gray-400 hover:text-gray-600"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+              <button 
+                type="submit" 
+                className="absolute right-3 top-1/2 transform -translate-y-1/4 text-gray-500 hover:text-gray-800"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                </svg>
+              </button>
+            </form>
+            
             <Link 
               href="/" 
               className="block py-2 font-serif hover:text-gray-900"
