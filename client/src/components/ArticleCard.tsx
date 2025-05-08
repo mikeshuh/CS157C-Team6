@@ -193,7 +193,7 @@ export default function ArticleCard({ article, featured = false }: ArticleCardPr
 
   return (
     <div className="bg-white border border-gray-200 hover:shadow-md transition relative">
-      <Link href={`/article/${article.id}`} className="block">
+      <Link href={`/article/${articleId}`} className="block">
         <div className="relative h-48">
           <Image 
             src={article.img || "/api/placeholder/800/400"}

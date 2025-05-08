@@ -3,6 +3,7 @@ from marshmallow import ValidationError
 from app.database import mongo
 from app.schemas import article_schema, user_schema
 from datetime import datetime
+import random
 from app.services.news_api import NewsApi
 from app.services.utils import *
 from app.services.scraper import scrape_article
@@ -134,50 +135,208 @@ def personalized_articles(user_id):
         
         # Get the user and their likes
         user = mongo.db.users.find_one({'_id': user_obj_id})
-        if not user or 'likes' not in user or not user['likes']:
-            # If user has no likes, return regular articles
+        print(f"User lookup result: {user is not None}")
+        
+        if not user:
+            print(f"User {user_id} not found in database")
+            return get_articles()
+            
+        # Check if user has likes
+        if 'likes' not in user:
+            print(f"User {user_id} has no 'likes' field in database")
+            return get_articles()
+            
+        # Check if likes array is empty
+        if not user['likes']:
+            print(f"User {user_id} has empty likes array")
+            return get_articles()
+            
+        # Log the raw likes array
+        print(f"Raw likes from database: {user['likes']}")
+        
+        try:
+            # Get all liked articles
+            liked_article_ids = [ObjectId(article_id) for article_id in user['likes']]
+            print(f"User {user_id} has {len(liked_article_ids)} liked articles")
+            print(f"First few liked_article_ids: {[str(id) for id in liked_article_ids[:3]]}")
+            
+            # Find the liked articles in the database
+            liked_articles = list(mongo.db.articles.find({'_id': {'$in': liked_article_ids}}))
+            print(f"Found {len(liked_articles)} liked articles in database")
+            
+            # Check if any liked articles were found
+            if not liked_articles:
+                print(f"WARNING: None of the user's liked articles were found in the database!")
+                # If no liked articles found in database, return regular articles
+                return get_articles()
+        except Exception as e:
+            print(f"Error processing liked articles: {str(e)}")
             return get_articles()
         
-        # Get all liked articles
-        liked_article_ids = [ObjectId(article_id) for article_id in user['likes']]
-        liked_articles = list(mongo.db.articles.find({'_id': {'$in': liked_article_ids}}))
+        # Debug each liked article to see what tags are available
+        print(f"Debugging liked articles:")
+        for idx, article in enumerate(liked_articles):
+            article_id = str(article.get('_id', 'unknown'))
+            has_summarization = 'summarization' in article
+            has_tags = has_summarization and 'tags' in article['summarization']
+            tags = article['summarization'].get('tags', []) if has_summarization else []
+            print(f"Article {idx+1} (ID: {article_id})")
+            print(f"  Has summarization: {has_summarization}")
+            print(f"  Has tags: {has_tags}")
+            print(f"  Tags: {tags}")
         
         # Extract all tags from liked articles
         preferred_tags = []
         for article in liked_articles:
             if 'summarization' in article and 'tags' in article['summarization']:
-                preferred_tags.extend(article['summarization']['tags'])
+                # Normalize tags - convert to lowercase and strip whitespace
+                article_tags = [tag.lower().strip() for tag in article['summarization']['tags'] if tag]
+                preferred_tags.extend(article_tags)
         
         # Count tag occurrences to find most preferred categories
         tag_counts = {}
         for tag in preferred_tags:
-            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+            if tag:  # Only count non-empty tags
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        
+        print(f"Tag counts from liked articles: {tag_counts}")
+        
+        # If no tags were found, use the categories from article titles as a fallback
+        if not tag_counts:
+            print("No tags found in liked articles, using categories from article titles as fallback")
+            popular_categories = ["World News", "Technology", "Sports", "Business", "Entertainment", "Health", "Science", "Politics"]
+            
+            # Check article titles for category hints
+            for article in liked_articles:
+                title = article.get('title', '').lower()
+                for category in popular_categories:
+                    if category.lower() in title:
+                        tag_counts[category] = tag_counts.get(category, 0) + 1
         
         # Get top 3 preferred tags (or all if fewer than 3)
         top_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)
         top_tags = [tag for tag, count in top_tags[:3]]
         
-        # Find articles matching these tags (excluding already liked articles)
-        recommended_articles = list(mongo.db.articles.find({
-            '_id': {'$nin': liked_article_ids},
-            'summarization.tags': {'$in': top_tags}
-        }).limit(10))
+        # If still no tags found, use a default category based on liked articles
+        if not top_tags and liked_articles:
+            # Default to "General News" if we can't determine categories
+            top_tags = ["General News"]
+            
+        print(f"Top preferred tags: {top_tags}")
         
-        # If not enough recommendations, add some general articles
+        # First get a larger pool of potential articles that match any of the preferred tags
+        or_conditions = []
+        for tag in top_tags:
+            # Exact tag matches with case insensitivity
+            or_conditions.append({'summarization.tags': {'$regex': f'^{tag}$', '$options': 'i'}})
+            # Partial tag matches for related content
+            or_conditions.append({'summarization.tags': {'$regex': tag, '$options': 'i'}})
+        
+        # Get a pool of candidate articles
+        candidate_articles = list(mongo.db.articles.find({
+            '_id': {'$nin': liked_article_ids},
+            '$or': or_conditions
+        }).limit(50))  # Get a larger pool to rank
+        
+        print(f"Found {len(candidate_articles)} candidate articles with tag matches")
+        
+        # If we don't have enough candidates, expand the search
+        if len(candidate_articles) < 10:
+            print("Not enough candidate articles, expanding search criteria")
+            # Add any articles with popular tags as fallback
+            popular_tags = ['Sports', 'Business', 'World News', 'Technology', 'Entertainment']
+            expanded_conditions = []
+            for tag in popular_tags:
+                expanded_conditions.append({'summarization.tags': {'$regex': f'^{tag}$', '$options': 'i'}})
+            
+            additional_articles = list(mongo.db.articles.find({
+                '_id': {'$nin': liked_article_ids + [article['_id'] for article in candidate_articles]},
+                '$or': expanded_conditions
+            }).limit(50 - len(candidate_articles)))
+            
+            candidate_articles.extend(additional_articles)
+            print(f"Added {len(additional_articles)} additional articles from popular categories")
+        
+        # Score each article based on how well it matches the preferred tags
+        scored_articles = []
+        for article in candidate_articles:
+            score = 0
+            if 'summarization' in article and 'tags' in article['summarization']:
+                article_tags = [tag.lower().strip() for tag in article['summarization']['tags']]
+                
+                # Count direct matches with preferred tags (higher score for exact match)
+                for preferred_tag in top_tags:
+                    if preferred_tag.lower() in article_tags:
+                        score += 10  # High score for exact match
+                    elif any(preferred_tag.lower() in tag for tag in article_tags):
+                        score += 5   # Medium score for partial match
+                    
+                # Extra score for articles that match multiple preferred tags
+                matches = sum(1 for tag in top_tags if tag.lower() in article_tags or 
+                             any(tag.lower() in t for t in article_tags))
+                if matches > 1:
+                    score += matches * 5  # Bonus for matching multiple preferred tags
+                
+                # Add slight boost for recency
+                if 'published_date' in article:
+                    try:
+                        pub_date = datetime.strptime(article['published_date'], '%Y-%m-%dT%H:%M:%S')
+                        days_old = (datetime.now() - pub_date).days
+                        if days_old < 3:
+                            score += 3  # Boost very recent articles
+                        elif days_old < 7:
+                            score += 1  # Small boost for articles less than a week old
+                    except:
+                        pass  # Skip date scoring if format issues
+                
+                # Add randomness factor to prevent repeated identical recommendations
+                score += random.uniform(0, 2)  # Small random component
+                
+                scored_articles.append((article, score))
+            else:
+                # Articles without tags still get considered but with a low score
+                scored_articles.append((article, 0.5))
+        
+        # Sort by score (highest first) and take top 10
+        sorted_articles = sorted(scored_articles, key=lambda x: x[1], reverse=True)
+        recommended_articles = [article for article, score in sorted_articles[:10]]
+        
+        # Log the scores of selected articles for debugging
+        print(f"Selected articles with scores:")
+        for i, (article, score) in enumerate(sorted_articles[:10]):
+            article_id = str(article.get('_id', 'unknown'))
+            article_tags = article.get('summarization', {}).get('tags', [])
+            print(f"  {i+1}. ID: {article_id}, Score: {score}, Tags: {article_tags}")
+        
+        print(f"Final recommendation count: {len(recommended_articles)} articles")
+        
+        # If still not enough recommendations, add some general articles
         if len(recommended_articles) < 10:
             additional_articles = list(mongo.db.articles.find({
                 '_id': {'$nin': liked_article_ids + [article['_id'] for article in recommended_articles]}
             }).limit(10 - len(recommended_articles)))
+            
+            print(f"Added {len(additional_articles)} general articles to fill up recommendations")
             recommended_articles.extend(additional_articles)
+        
+        # For debugging: print the tags of recommended articles
+        for i, article in enumerate(recommended_articles):
+            tags = article.get('summarization', {}).get('tags', [])
+            print(f"Recommended article {i+1} tags: {tags}")
         
         # Convert ObjectId to string for JSON serialization
         for article in recommended_articles:
             article['_id'] = str(article['_id'])
+            
+        # Make sure we capitalize the tags for better display
+        display_tags = [tag.capitalize() for tag in top_tags]
+        
+        print(f"Returning {len(recommended_articles)} personalized articles with tags: {display_tags}")
         
         return jsonify({
             'success': True,
             'num_found': len(recommended_articles),
-            'preferred_tags': top_tags,
+            'preferred_tags': display_tags,
             'articles': recommended_articles
         })
         
@@ -310,11 +469,20 @@ def login():
         
         access_token = create_access_token(identity=user_claims)
         
+        # Get user likes and convert ObjectIds to strings if needed
+        user_likes = user.get('likes', [])
+        print(f"User {username} has {len(user_likes)} likes in database")
+        
+        # Ensure likes are properly formatted as strings
+        if user_likes:
+            user_likes = [str(like_id) for like_id in user_likes]
+            print(f"First few likes: {user_likes[:3]}")
+        
         # Return the user's MongoDB ID along with the token
         return jsonify({
             'access_token': access_token,
             'user_id': str(user['_id']),
-            'likes': user.get('likes', [])
+            'likes': user_likes
         }), 200
     
     except Exception as e:
@@ -345,6 +513,62 @@ def get_user_likes(user_id):
         return jsonify({
             "success": False,
             "error": str(e),
+        }), 500
+
+@main.route('/api/user/liked_articles/<user_id>', methods=['GET'])
+def get_user_liked_articles(user_id):
+    '''
+    Fetch the full article details for all articles a user has liked
+    '''
+    try:
+        # Convert string ID to ObjectId
+        try:
+            user_obj_id = ObjectId(user_id)
+        except Exception:
+            return jsonify({"success": False, "error": "Invalid user_id format"}), 400
+            
+        # Find the user and get their likes
+        user = mongo.db.users.find_one({"_id": user_obj_id})
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 404
+        
+        user_likes = user.get('likes', [])
+        if not user_likes:
+            return jsonify({
+                "success": True,
+                "num_found": 0,
+                "articles": []
+            }), 200
+        
+        # Convert string IDs to ObjectIds
+        try:
+            liked_article_ids = [ObjectId(article_id) for article_id in user_likes]
+        except Exception as e:
+            print(f"Error converting article IDs: {str(e)}")
+            return jsonify({"success": False, "error": "Invalid article ID format"}), 400
+        
+        # Fetch the articles from the database
+        liked_articles = list(mongo.db.articles.find({
+            "_id": {"$in": liked_article_ids}
+        }))
+        
+        print(f"Found {len(liked_articles)} liked articles for user {user_id}")
+        
+        # Convert ObjectIds to strings for JSON serialization
+        for article in liked_articles:
+            article['_id'] = str(article['_id'])
+        
+        return jsonify({
+            "success": True,
+            "num_found": len(liked_articles),
+            "articles": liked_articles
+        }), 200
+    except Exception as e:
+        print(f"Error getting liked articles: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "articles": []
         }), 500
 
 @main.route('/api/like_article', methods=['POST'])

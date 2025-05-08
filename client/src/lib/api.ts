@@ -1,5 +1,5 @@
 // lib/api.ts
-import { ArticleResponse, GenerateArticlesResponse, LoginResponse, User, LikeResponse } from './types';
+import { ArticleResponse, GenerateArticlesResponse, LoginResponse, User, LikeResponse, Article } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -35,17 +35,76 @@ export async function getArticles(params: {
  */
 export async function getPersonalizedArticles(userId: string): Promise<ArticleResponse & { preferred_tags?: string[] }> {
   try {
+    console.log('Calling personalized articles API with userId:', userId);
+    
+    // Validate userId
+    if (!userId || userId === 'undefined' || userId === 'null') {
+      console.error('Invalid userId provided to getPersonalizedArticles:', userId);
+      throw new Error('Invalid userId');
+    }
+    
     const response = await fetch(`${API_URL}/api/personalized_articles/${userId}`);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    return response.json();
+    const data = await response.json();
+    console.log('Personalized articles API response:', {
+      success: data.success,
+      numArticles: data.articles?.length || 0,
+      preferredTags: data.preferred_tags || []
+    });
+    
+    return data;
   } catch (error) {
     console.error('Error fetching personalized articles:', error);
     // If personalization fails, fall back to regular articles
+    console.log('Falling back to regular articles');
     return getArticles();
+  }
+}
+
+/**
+ * Fetch the full liked articles for a user (not just IDs)
+ * @param userId The MongoDB ID of the user to get liked articles for
+ */
+export async function getUserLikedArticles(userId: string): Promise<ArticleResponse> {
+  try {
+    console.log('Fetching liked articles for user:', userId);
+    
+    // Validate userId
+    if (!userId || userId === 'undefined' || userId === 'null') {
+      console.error('Invalid userId provided to getUserLikedArticles:', userId);
+      throw new Error('Invalid userId');
+    }
+    
+    // Use the new dedicated endpoint to get the user's liked articles with full details
+    const response = await fetch(`${API_URL}/api/user/liked_articles/${userId}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error fetching liked articles! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log(`Retrieved ${data.articles?.length || 0} liked articles for user ${userId}`);
+    
+    // Ensure all articles have the MongoDB _id property available
+    // (critical for consistency throughout the application)
+    if (data.articles) {
+      data.articles.forEach((article: Article) => {
+        // Make sure we're using the MongoDB _id as per project requirements
+        if (!article._id && article.id) {
+          console.warn('Article missing _id but has id, fixing this inconsistency');
+          article._id = article.id;
+        }
+      });
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error fetching liked articles:', error);
+    return { articles: [], num_found: 0 };
   }
 }
 

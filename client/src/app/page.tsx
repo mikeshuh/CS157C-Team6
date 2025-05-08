@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { getArticles, generateArticles, getPersonalizedArticles, getUserId, isAuthenticated } from '@/lib/api';
+import { getArticles, generateArticles, getPersonalizedArticles, getUserLikedArticles, getUserId, isAuthenticated } from '@/lib/api';
 import { Article } from '@/lib/types';
 import ArticleCard from '@/components/ArticleCard';
 import Image from 'next/image';
@@ -49,6 +49,7 @@ function HomeContent() {
   const [currentDate, setCurrentDate] = useState("");
   const [personalizationMessage, setPersonalizationMessage] = useState<string | null>(null);
   const [likeUpdateTrigger, setLikeUpdateTrigger] = useState(0); // To trigger refresh on like changes
+  const [showLikedArticles, setShowLikedArticles] = useState(false); // Toggle between recommendations and liked articles
   
   // Set the current date on the client side
   useEffect(() => {
@@ -90,6 +91,14 @@ function HomeContent() {
     };
   }, [selectedCategory]);
   
+  // Force a refresh when switching to the "For You" tab
+  useEffect(() => {
+    // When user selects the "For You" tab, always refresh content from server
+    if (selectedCategory === "For You" && isAuthenticated()) {
+      setLikeUpdateTrigger(prev => prev + 1);
+    }
+  }, [selectedCategory]);
+  
   // Set up an interval to check for local like changes (within same tab)
   useEffect(() => {
     if (typeof window === 'undefined' || selectedCategory !== "For You") return;
@@ -116,6 +125,8 @@ function HomeContent() {
       setError(null);
       setPersonalizationMessage(null);
       
+      console.log('Fetching news - showLikedArticles:', showLikedArticles, 'selectedCategory:', selectedCategory);
+      
       try {
         let response;
         const userId = getUserId();
@@ -126,23 +137,72 @@ function HomeContent() {
           
           // Handle the "For You" personalized feed
           if (authenticated && userId) {
-            // Get personalized articles for logged-in users
-            try {
-              response = await getPersonalizedArticles(userId);
-              
-              // Display personalization message if we have preferred tags
-              if (response.preferred_tags?.length) {
-                setPersonalizationMessage(
-                  `Articles personalized based on your interests: ${response.preferred_tags.join(', ')}`
-                );
-              } else {
-                // User is logged in but doesn't have preferred tags yet
-                setPersonalizationMessage('Like some articles to personalize your feed!');
+            if (showLikedArticles) {
+              // User wants to see their liked articles
+              try {
+                console.log('Fetching liked articles for user:', userId);
+                response = await getUserLikedArticles(userId);
+                
+                if (response.articles?.length) {
+                  setPersonalizationMessage(
+                    `Showing your ${response.articles.length} liked articles`
+                  );
+                  console.log(`Found ${response.articles.length} liked articles`);
+                } else {
+                  setPersonalizationMessage('You haven\'t liked any articles yet.');
+                  console.log('No liked articles found');
+                  // If no liked articles, switch back to recommendations
+                  if (response.articles.length === 0) {
+                    setShowLikedArticles(false);
+                  }
+                }
+              } catch (error) {
+                console.error('Error fetching liked articles:', error);
+                response = await getArticles();
+                setPersonalizationMessage('Could not retrieve your liked articles. Showing default content.');
+                setShowLikedArticles(false); // Switch back to recommendations if there's an error
               }
-            } catch (error) {
-              console.error('Error fetching personalized articles:', error);
-              response = await getArticles();
-              setPersonalizationMessage('Could not retrieve personalized articles. Showing default content.');
+            } else {
+              // ALWAYS fetch personalized articles directly from the server
+              // This ensures we get the most up-to-date preferences regardless of local storage
+              try {
+                console.log('Fetching personalized articles for user:', userId);
+                response = await getPersonalizedArticles(userId);
+                
+                // Display personalization message based on response data
+                if (response.preferred_tags?.length) {
+                  // User has preferred tags, show personalized message with the format the user likes
+                  setPersonalizationMessage(
+                    `Articles personalized based on your interests: ${response.preferred_tags.join(', ')}`
+                  );
+                  console.log('User has preferred tags:', response.preferred_tags);
+                } else if (response.articles?.length) {
+                  // We have articles but no preferred tags - use a generic personalization message
+                  setPersonalizationMessage(
+                    'Articles personalized based on your reading history'
+                  );
+                  console.log('No preferred tags but articles found');
+                } else {
+                  // Check if user has any likes in localStorage
+                  const likedArticles = localStorage.getItem('likedArticles');
+                  const hasLikes = likedArticles && JSON.parse(likedArticles).length > 0;
+                  
+                  if (hasLikes) {
+                    setPersonalizationMessage(
+                      'Articles personalized based on your recent activity'
+                    );
+                    console.log('User has likes but no preferred tags extracted');
+                  } else {
+                    // User is logged in but doesn't have preferred tags yet
+                    setPersonalizationMessage('Like some articles to personalize your feed!');
+                    console.log('User has no likes');
+                  }
+                }
+              } catch (error) {
+                console.error('Error fetching personalized articles:', error);
+                response = await getArticles();
+                setPersonalizationMessage('Could not retrieve personalized articles. Showing default content.');
+              }
             }
           } else {
             // User is not logged in, show regular articles with a message
@@ -167,7 +227,7 @@ function HomeContent() {
     };
 
     fetchNews();
-  }, [selectedCategory, likeUpdateTrigger]); // Add likeUpdateTrigger to dependencies
+  }, [selectedCategory, likeUpdateTrigger, showLikedArticles]); // Include showLikedArticles to trigger refresh on toggle
 
   // Handle generating articles
   const handleGenerateArticles = async () => {
@@ -279,17 +339,54 @@ function HomeContent() {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 mb-12 mt-6">
+        {/* Personalization message with toggle switch for For You tab */}
         {personalizationMessage && (
           <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6 rounded-r shadow-sm">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
-                </svg>
+            <div className="flex justify-between items-start">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-blue-700">{personalizationMessage}</p>
+                </div>
               </div>
-              <div className="ml-3">
-                <p className="text-sm text-blue-700">{personalizationMessage}</p>
-              </div>
+              
+              {/* Tab buttons for For You tab */}
+              {selectedCategory === "For You" && isAuthenticated() && (
+                <div className="ml-4">
+                  <div className="inline-flex rounded-md shadow-sm" role="group">
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        console.log('Switching to recommended articles');
+                        setShowLikedArticles(false);
+                        setLikeUpdateTrigger(prev => prev + 1); // Force refresh
+                      }}
+                      className={`px-4 py-2 text-sm font-medium ${!showLikedArticles 
+                        ? 'text-white bg-blue-600 border border-blue-600 rounded-l-lg' 
+                        : 'text-blue-600 bg-white border border-gray-300 rounded-l-lg hover:bg-gray-100'}`}
+                    >
+                      For You
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        console.log('Switching to liked articles');
+                        setShowLikedArticles(true);
+                        setLikeUpdateTrigger(prev => prev + 1); // Force refresh
+                      }}
+                      className={`px-4 py-2 text-sm font-medium ${showLikedArticles 
+                        ? 'text-white bg-blue-600 border border-blue-600 rounded-r-lg' 
+                        : 'text-blue-600 bg-white border border-gray-300 hover:bg-gray-100 rounded-r-lg'}`}
+                    >
+                      Liked
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
