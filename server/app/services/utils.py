@@ -99,6 +99,10 @@ def scrape_summarize(response):
         response = ai_client.summarize_article(content) #jsonify object returned from summarize_article
         summary_data = json.loads(response.data) #converting jsonify object to dict
         article['summarization'] = summary_data['summarization'] #setting a new field for each article
+        if (len(article['summarization']['tags'])) == 0: #if gemini failed to summarize, then tags size is 0
+            failed += 1
+            print(article_url, "failed to scrape")
+            URL_to_remove.append(article_url)
     data['num_failed'] = failed
     data['processed_articles'] = [article for article in data['processed_articles'] if article['url'] not in URL_to_remove] #removing articles that failed to scrape from the list of processed articles
     return data  
