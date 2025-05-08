@@ -294,3 +294,55 @@ export function logout(): void {
     localStorage.removeItem('likedArticles'); // Also clear likes on logout
   }
 }
+
+/**
+ * Helper function to handle the entire article like/unlike process consistently across the app
+ * This helps eliminate the duplicate code in different components and ensures consistent behavior
+ */
+export async function toggleArticleLike(articleId: string): Promise<{ success: boolean, isLiked: boolean }> {
+  try {
+    // Check authentication
+    if (!isAuthenticated()) {
+      throw new Error('User not authenticated');
+    }
+    
+    const userId = getUserId();
+    if (!userId) {
+      throw new Error('User ID not found');
+    }
+    
+    // Get current liked state
+    const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
+    const isCurrentlyLiked = likedArticles.includes(articleId);
+    const newLikedState = !isCurrentlyLiked;
+    
+    // Call the API
+    await likeArticle(userId, articleId);
+    
+    // Update local storage
+    if (newLikedState) {
+      if (!likedArticles.includes(articleId)) {
+        likedArticles.push(articleId);
+      }
+    } else {
+      const index = likedArticles.indexOf(articleId);
+      if (index > -1) {
+        likedArticles.splice(index, 1);
+      }
+    }
+    localStorage.setItem('likedArticles', JSON.stringify(likedArticles));
+    
+    // Dispatch a custom event for components to listen to
+    if (typeof window !== 'undefined') {
+      const event = new CustomEvent('likeUpdate', { 
+        detail: { articleId, isLiked: newLikedState } 
+      });
+      window.dispatchEvent(event);
+    }
+    
+    return { success: true, isLiked: newLikedState };
+  } catch (error) {
+    console.error('Error toggling article like:', error);
+    throw error;
+  }
+}

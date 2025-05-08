@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Article } from '@/lib/types';
-import { likeArticle, getUserId, isAuthenticated, getUserLikes } from '@/lib/api';
+import { getUserId, isAuthenticated, getUserLikes, toggleArticleLike } from '@/lib/api';
 
 interface ArticleCardProps {
   article: Article;
@@ -60,43 +60,19 @@ export default function ArticleCard({ article, featured = false }: ArticleCardPr
       return;
     }
     
-    const userId = getUserId();
-    if (!userId) {
-      alert('User ID not found. Please log in again.');
+    if (!articleId) {
+      console.error('Missing article ID for like operation:', article);
+      alert('Please try again. Could not process this article.');
       return;
     }
     
     try {
       setIsLiking(true);
-      
-      // Make sure we have a valid article ID before sending the request
-      if (!articleId) {
-        console.error('Missing article ID for like operation:', article);
-        alert('Please try again. Could not process this article.');
-        setIsLiking(false);
-        return;
-      }
-      
       console.log('Attempting to like article with ID:', articleId);
-      await likeArticle(userId, articleId);
       
-      // Toggle like state
-      const newLikedState = !isLiked;
-      setIsLiked(newLikedState);
-      
-      // Update local storage
-      const likedArticles = JSON.parse(localStorage.getItem('likedArticles') || '[]');
-      if (newLikedState) {
-        if (!likedArticles.includes(articleId)) {
-          likedArticles.push(articleId);
-        }
-      } else {
-        const index = likedArticles.indexOf(articleId);
-        if (index > -1) {
-          likedArticles.splice(index, 1);
-        }
-      }
-      localStorage.setItem('likedArticles', JSON.stringify(likedArticles));
+      // Use the centralized helper function
+      const result = await toggleArticleLike(articleId);
+      setIsLiked(result.isLiked);
     } catch (error) {
       console.error('Error liking article:', error);
       alert('Failed to like article. Please try again.');
