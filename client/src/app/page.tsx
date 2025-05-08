@@ -255,8 +255,10 @@ function HomeContent() {
       // Improved date search - handle multiple date formats
       let dateMatches = false;
       if (article.published_date) {
-        // Original date string
-        const originalDate = article.published_date.toLowerCase();
+        // Original date string - ensure it's a string before calling toLowerCase
+        const originalDate = typeof article.published_date === 'string' 
+          ? article.published_date.toLowerCase() 
+          : String(article.published_date).toLowerCase();
         
         // Convert to Date object for formatted versions
         const dateObj = new Date(article.published_date);
