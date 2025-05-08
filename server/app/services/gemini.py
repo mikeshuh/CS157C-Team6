@@ -17,7 +17,7 @@ class AI():
         "Return as a JSON object. Here is the JSON schema: " +\
         "Summary = {{'summary': str, 'key_points' : list[str], 'tags' : list[str]}}, " +\
         "Tag the articles based on its content. The max amount of tags an article can have is 4. Populate the tags key only using these options: " +\
-        "[World News, Politics, Business, Finance, Health, Science, Entertainment, Sports, Technology, AI, Cybersecurity, Gaming, Travel, Food, Lifestlye]"
+        "[World News, Politics, Business, Finance, Health, Science, Entertainment, Sports, Technology, AI, Cybersecurity, Gaming, Travel, Food, Lifestyle]"
         "Here is the article: "
 
     def summarize_article(self, content):
