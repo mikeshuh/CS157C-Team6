@@ -654,6 +654,7 @@ def generate_articles():
         
         data["pageSize"] = 5 #setting max articles to get to 5 (for now)
         data['sortBy'] = 'relevancy'
+        data['excludeDomains'] = 'businessinsider.com'
         print('Parameters for article query from NewsAPI:', data)
         result = news_api.get_articles(params=data) #result is a jsonify object from get_articles
         #print("Results from News API: \n", json.loads(result.data))
