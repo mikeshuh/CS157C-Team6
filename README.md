@@ -98,15 +98,15 @@ The application consists of two main services orchestrated with Docker Compose:
 
 ```mermaid
 graph LR
-    A[News API] -->|Article URLs| B[BeautifulSoup]
-    B -->|Raw Article Content| C[Gemini AI]
-    C -->|Summary & Tags| D[MongoDB]
-    D -->|Personalized Feed| E[User Interface]
-    style A fill:#FFEC99,stroke:#FFC940
-    style B fill:#C3E5AE,stroke:#82C43C
-    style C fill:#FFD2A8,stroke:#FF8C42
-    style D fill:#B5DCFD,stroke:#4285F4
-    style E fill:#D0BCFF,stroke:#9747FF
+    A[News API] -->|"<b style='background:#333; color:white; padding:3px; border-radius:3px;'>Article URLs</b>"| B[BeautifulSoup]
+    B -->|"<b style='background:#333; color:white; padding:3px; border-radius:3px;'>Raw Article Content</b>"| C[Gemini AI]
+    C -->|"<b style='background:#333; color:white; padding:3px; border-radius:3px;'>Summary & Tags</b>"| D[MongoDB]
+    D -->|"<b style='background:#333; color:white; padding:3px; border-radius:3px;'>Personalized Feed</b>"| E[User Interface]
+    style A fill:#FFD700,stroke:#B8860B,color:#000000,font-weight:bold
+    style B fill:#90EE90,stroke:#2E8B57,color:#000000,font-weight:bold
+    style C fill:#FFA07A,stroke:#CD5C5C,color:#000000,font-weight:bold
+    style D fill:#87CEFA,stroke:#1E90FF,color:#000000,font-weight:bold
+    style E fill:#DDA0DD,stroke:#8A2BE2,color:#000000,font-weight:bold
 ```
 
 The pipeline combines external data sources, web scraping, AI processing, and database storage:
