@@ -222,9 +222,3 @@ docker compose down
 ## 📞 Support
 
 For assistance or to report issues, please open an issue on GitHub.
-
----
-
-<div align="center">
-  <strong>Made with ❤️ by CS157C Team 6</strong>
-</div>
